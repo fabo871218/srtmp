@@ -331,7 +331,7 @@ func NewAACSequenceHeader(timeStamp uint32) []byte {
 		mediat: mediaTag{
 			soundFormat: av.SOUND_AAC,   //aac
 			soundRate:   av.SOUND_44Khz, //44KHz
-			soundSize:   av.SOUND_8BIT,
+			soundSize:   av.SOUND_16BIT,
 			soundType:   av.SOUND_MONO, //单声道
 
 			aacPacketType: av.AAC_SEQHDR,
@@ -424,7 +424,7 @@ func NewAACData(src []byte, timeStamp uint32) (buffer []byte) {
 		mediat: mediaTag{
 			soundFormat: av.SOUND_AAC,
 			soundRate:   av.SOUND_44Khz,
-			soundSize:   av.SOUND_8BIT,
+			soundSize:   av.SOUND_16BIT,
 			soundType:   av.SOUND_MONO,
 
 			aacPacketType: av.AAC_RAW,

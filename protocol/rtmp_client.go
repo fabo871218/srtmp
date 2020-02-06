@@ -14,13 +14,15 @@ type RtmpClient struct {
 	conn            *core.ConnClient
 	onPacketReceive func(av.Packet)
 	isPublish       bool
-	isFirstPacket   bool //first packet to send
+	videoFirst      bool //first packet to send
+	audioFirst      bool
 }
 
 func NewRtmpClient() *RtmpClient {
 	return &RtmpClient{
-		packetChan:    make(chan *av.Packet, 16),
-		isFirstPacket: true,
+		packetChan: make(chan *av.Packet, 16),
+		videoFirst: true,
+		audioFirst: true,
 	}
 }
 
@@ -56,37 +58,59 @@ func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 		return fmt.Errorf("It is not publish mode")
 	}
 
-	if c.isFirstPacket {
-		var sps, pps []byte
-		nalus := h264.ParseNalus(pkt.Data)
-		for _, nalu := range nalus {
-			if naluType := nalu[0] & 0x1F; naluType == 7 {
-				sps = nalu
-			} else if naluType == 8 {
-				pps = nalu
+	if pkt.IsVideo {
+		if c.videoFirst {
+			var sps, pps []byte
+			nalus := h264.ParseNalus(pkt.Data)
+			for _, nalu := range nalus {
+				if naluType := nalu[0] & 0x1F; naluType == 7 {
+					sps = nalu
+				} else if naluType == 8 {
+					pps = nalu
+				}
 			}
+
+			if sps == nil || pps == nil {
+				fmt.Printf("sps and pps needed for first packet\n")
+				return nil
+			}
+			//send flv sequence header
+			sequencePkt := &av.Packet{
+				IsVideo:   true,
+				Data:      flv.NewAVCSequenceHeader(sps, pps, pkt.TimeStamp),
+				TimeStamp: pkt.TimeStamp,
+			}
+
+			if err := c.sendPacket(sequencePkt); err != nil {
+				return fmt.Errorf("send flv sequence header failed, %v", err)
+			}
+			c.videoFirst = false
 		}
 
-		if sps == nil || pps == nil {
-			fmt.Printf("sps and pps needed for first packet\n")
-			return nil
+		pkt.Data = flv.NewAVCNaluData(pkt.Data, pkt.TimeStamp)
+		if err := c.sendPacket(pkt); err != nil {
+			return fmt.Errorf("send packet failed, %v", err)
 		}
-		//send flv sequence header
-		sequencePkt := &av.Packet{
-			IsVideo:   true,
-			Data:      flv.NewAACSequenceHeader(sps, pps, pkt.TimeStamp),
-			TimeStamp: pkt.TimeStamp,
+	} else if pkt.IsAudio {
+		if c.audioFirst {
+			sequencePkt := &av.Packet{
+				IsAudio:   true,
+				Data:      flv.NewAACSequenceHeader(pkt.TimeStamp),
+				TimeStamp: pkt.TimeStamp,
+			}
+
+			if err := c.sendPacket(sequencePkt); err != nil {
+				return fmt.Errorf("send flv sequence header failed. %v", err)
+			}
+			c.videoFirst = false
 		}
 
-		if err := c.sendPacket(sequencePkt); err != nil {
-			return fmt.Errorf("send flv sequence header failed, %v", err)
+		pkt.Data = flv.NewAACData(pkt.Data, pkt.TimeStamp)
+		if err := c.sendPacket(pkt); err != nil {
+			return fmt.Errorf("send packet failed, %v", err)
 		}
-		c.isFirstPacket = false
-	}
-
-	pkt.Data = flv.NewAACNalu(pkt.Data, pkt.TimeStamp)
-	if err := c.sendPacket(pkt); err != nil {
-		return fmt.Errorf("send packet failed, %v", err)
+	} else {
+		return fmt.Errorf("packet type is not video and audio")
 	}
 	return nil
 }

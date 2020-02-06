@@ -112,3 +112,8 @@ func (parser *Parser) Parse(b []byte, packetType uint8, w io.Writer) (err error)
 	}
 	return
 }
+
+//SpecificConfig comment
+func SpecificConfig() []byte {
+	return []byte{0x12, 0x08}
+}

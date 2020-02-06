@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/fabo871218/srtmp/av"
+	"github.com/fabo871218/srtmp/media/aac"
 	"github.com/fabo871218/srtmp/media/h264"
 	"github.com/fabo871218/srtmp/utils"
 )
@@ -79,6 +80,36 @@ aligned(8) class AVCDecoderConfigurationRecord {
 }
 */
 
+/*
+audio tag
+SoundFormat  4bit
+SoundRage    2bit
+SoundSize    1bit
+SoundType    1bit
+SoundData    n bytes //音频数据
+
+当SoundFormat == 10 时，SoundData的数据时AAC格式
+AACAudioData格式如下
+AACPacketType  8bit  0--aac sequence header  1--aac raw
+Data           n bytes
+当 AACPacketType == 0 时，Data数据为AudioSpecificConfig
+当 AAXCPacketType == 1 时，Data数据为AAC raw frame data
+
+AudioSpecificConfig 格式为
+audioObjectType  5bit
+samplingFrequencyIndex 4bit
+if samplingFrequencyIndex == 15 {
+	当samplingFrequencyIndex， samplingFrequency直接指定采用率，否则不占位
+	samplingFrequency  24bit
+}
+channelConfiguration 4bit //输出声道信息，如双声道为2
+（GASpecificConfig 包含以下三项）
+frameLengthFlag 1bit
+dependsOnCoreCoder 1bit
+extensionFlag 1bit
+*/
+
+//meidaTag 包含视频tag和音频tag
 type mediaTag struct {
 	/*
 		SoundFormat: UB[4]
@@ -256,7 +287,8 @@ func (tag *Tag) parseVideoHeader(b []byte) (n int, err error) {
 	return
 }
 
-func NewAACSequenceHeader(sps, pps []byte, timeStamp uint32) []byte {
+//NewAVCSequenceHeader comment
+func NewAVCSequenceHeader(sps, pps []byte, timeStamp uint32) []byte {
 	avcConfigRecord := h264.AVCDecoderConfigurationRecord(sps, pps)
 	tag := &Tag{
 		flvt: flvTag{
@@ -285,8 +317,39 @@ func NewAACSequenceHeader(sps, pps []byte, timeStamp uint32) []byte {
 	return buffer[:index]
 }
 
-//NewAACNalu 把nalu单元打包成rtmp的payload
-func NewAACNalu(src []byte, timeStamp uint32) (buffer []byte) {
+//NewAACSequenceHeader comment
+func NewAACSequenceHeader(timeStamp uint32) []byte {
+	specificConfig := aac.SpecificConfig()
+	tag := &Tag{
+		flvt: flvTag{
+			fType:           av.TAG_AUDIO,
+			dataSize:        uint32(len(specificConfig)),
+			timeStamp:       timeStamp,
+			timeStampExtend: 0,
+			streamID:        0,
+		},
+		mediat: mediaTag{
+			soundFormat: av.SOUND_AAC,   //aac
+			soundRate:   av.SOUND_44Khz, //44KHz
+			soundSize:   av.SOUND_8BIT,
+			soundType:   av.SOUND_MONO, //单声道
+
+			aacPacketType: av.AAC_SEQHDR,
+		},
+	}
+
+	index := 0
+	tagBuffer := muxerTagData(tag)
+	buffer := make([]byte, len(tagBuffer)+len(specificConfig))
+	copy(buffer, tagBuffer)
+	index += len(tagBuffer)
+	copy(buffer[index:], specificConfig)
+	index += len(specificConfig)
+	return buffer[:index]
+}
+
+//NewAVCNaluData 把nalu单元打包成rtmp的payload
+func NewAVCNaluData(src []byte, timeStamp uint32) (buffer []byte) {
 	//nalu单元至少要大于4个字节，包括start code（一帧开始的起始码应该是4位）
 	if len(src) <= 4 {
 		buffer = make([]byte, 0)
@@ -301,7 +364,7 @@ func NewAACNalu(src []byte, timeStamp uint32) (buffer []byte) {
 	tag := &Tag{
 		flvt: flvTag{
 			fType:           av.TAG_VIDEO,
-			dataSize:        uint32(len(src)),
+			dataSize:        uint32(len(src)), //在用rtmp协议发送是，改字段好像不起作用，正常情况是后面mediaTag+数据的长度
 			timeStamp:       timeStamp,
 			timeStampExtend: 0,
 			streamID:        0,
@@ -348,7 +411,38 @@ func NewAACNalu(src []byte, timeStamp uint32) (buffer []byte) {
 	return buffer[:index]
 }
 
-//MuxerTagData 打包tag头和数据部分
+//NewAACData comment
+func NewAACData(src []byte, timeStamp uint32) (buffer []byte) {
+	tag := &Tag{
+		flvt: flvTag{
+			fType:           av.TAG_AUDIO,
+			dataSize:        uint32(len(src)),
+			timeStamp:       timeStamp,
+			timeStampExtend: 0,
+			streamID:        0,
+		},
+		mediat: mediaTag{
+			soundFormat: av.SOUND_AAC,
+			soundRate:   av.SOUND_44Khz,
+			soundSize:   av.SOUND_8BIT,
+			soundType:   av.SOUND_MONO,
+
+			aacPacketType: av.AAC_RAW,
+		},
+	}
+	tagBuffer := muxerTagData(tag)
+	index := 0
+	buffer = make([]byte, len(tagBuffer)+len(src))
+	copy(buffer[index:], tagBuffer)
+	index += len(tagBuffer)
+	copy(buffer[index:], src)
+	index += len(src)
+	return buffer[:index]
+}
+
+//MuxerTagData 打包tag头和数据部分，在用rtmp协议发送时，tag头只包含了mediaTag，没有flvTag数据
+//应该时flvTag这部分功能被chunk的功能替代了，不用flvTag也可以知道一个完整的帧，如果打包成flv文件时，
+//flvTag不能省略
 func muxerTagData(tag *Tag) []byte {
 	n := 0
 	buffer := make([]byte, 5) //16是按最大的长度来计算，aac有16个字节长度头
@@ -370,6 +464,10 @@ func muxerTagData(tag *Tag) []byte {
 		buffer[n] = (tag.mediat.soundFormat << 4) | (tag.mediat.soundRate << 2 & 0x0C) |
 			(tag.mediat.soundSize << 1 & 0x02) | (tag.mediat.soundType & 0x01)
 		n++
+		if tag.mediat.soundFormat == av.SOUND_AAC {
+			utils.PutU8(buffer[n:], tag.mediat.aacPacketType) //AACPacketType
+			n++
+		}
 	}
 	//剩下的都认为是脚本tag，直接写入数据
 	return buffer[:n]

@@ -211,6 +211,7 @@ func (s *RtmpStream) streamLoop() {
 				bRemove := false
 				for i, w := range s.writers {
 					if err := w.Write(pkt); err != nil {
+						fmt.Printf("write packet failed, %v close writer", err)
 						w.Close() //todo 是否要传递参数
 						s.writers[i] = nil
 						bRemove = true
@@ -221,6 +222,8 @@ func (s *RtmpStream) streamLoop() {
 					for i := 0; i < len(s.writers); {
 						if s.writers[i] == nil {
 							s.writers = append(s.writers[:i], s.writers[i+1:]...)
+						} else {
+							i++
 						}
 					}
 					lastWriteRemove = time.Now()

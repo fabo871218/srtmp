@@ -118,7 +118,7 @@ func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 				}
 			}
 
-			c.videoFirst = false
+			c.audioFirst = false
 		}
 
 		pkt.Data = flv.NewAACData(ah, pkt.Data, pkt.TimeStamp)

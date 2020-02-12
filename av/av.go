@@ -27,10 +27,23 @@ const (
 	SOUND_AAC                   = 10
 	SOUND_SPEEX                 = 11
 
-	SOUND_5_5Khz = 0
-	SOUND_11Khz  = 1
-	SOUND_22Khz  = 2
-	SOUND_44Khz  = 3
+	//rtmp tag中只支持前面四种采样率，后面是为了程序处理方便自己添加
+	SOUND_RATE_5_5Khz = 0 //
+	SOUND_RATE_11Khz  = 1 //11025 hz
+	SOUND_RATE_22Khz  = 2 //22050 hz
+	SOUND_RATE_44Khz  = 3
+
+	//自己添加
+	SOUND_RATE_7Khz  = 4  //7350 hz
+	SOUND_RATE_8Khz  = 5  //8000 hz
+	SOUND_RATE_12Khz = 6  //12000 hz
+	SOUND_RATE_16Khz = 7  //16000 hz
+	SOUND_RATE_24Khz = 8  //24000 hz
+	SOUND_RATE_32Khz = 9  //32000 hz
+	SOUND_RATE_48Khz = 10 //48000 hz
+	SOUND_RATE_64Khz = 11 //64000 hz
+	SOUND_RATE_88Khz = 12 //88200 hz
+	SOUND_RATE_96Khz = 13 // 96000 hz
 
 	SOUND_8BIT  = 0
 	SOUND_16BIT = 1
@@ -82,12 +95,17 @@ type StreamInfo struct {
 	Inter bool
 }
 
+//PacketHeader comment
 type PacketHeader interface {
 }
 
+//AudioPacketHeader comment
 type AudioPacketHeader interface {
 	PacketHeader
 	SoundFormat() uint8
+	SoundRate() uint8
+	SoundSize() uint8
+	SoundType() uint8
 	AACPacketType() uint8
 }
 

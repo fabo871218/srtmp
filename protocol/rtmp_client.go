@@ -92,20 +92,28 @@ func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 			return fmt.Errorf("send packet failed, %v", err)
 		}
 	} else if pkt.IsAudio {
+		ah, ok := pkt.Header.(av.AudioPacketHeader)
+		if ok == false {
+			return fmt.Errorf("audio pkt.Header should be av.AudioPacketHeader")
+		}
 		if c.audioFirst {
-			sequencePkt := &av.Packet{
-				IsAudio:   true,
-				Data:      flv.NewAACSequenceHeader(pkt.TimeStamp),
-				TimeStamp: pkt.TimeStamp,
+			if ah.SoundFormat == av.SOUND_AAC {
+				//如果音频是aac，需要先发送aac sequence header
+				sequencePkt := &av.Packet{
+					IsAudio:   true,
+					Data:      flv.NewAACSequenceHeader(ah),
+					TimeStamp: pkt.TimeStamp,
+				}
+
+				if err := c.sendPacket(sequencePkt); err != nil {
+					return fmt.Errorf("send aac sequence header failed. %v", err)
+				}
 			}
 
-			if err := c.sendPacket(sequencePkt); err != nil {
-				return fmt.Errorf("send flv sequence header failed. %v", err)
-			}
 			c.videoFirst = false
 		}
 
-		pkt.Data = flv.NewAACData(pkt.Data, pkt.TimeStamp)
+		pkt.Data = flv.NewAACData(ah, pkt.Data, pkt.TimeStamp)
 		if err := c.sendPacket(pkt); err != nil {
 			return fmt.Errorf("send packet failed, %v", err)
 		}

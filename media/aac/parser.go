@@ -114,6 +114,13 @@ func (parser *Parser) Parse(b []byte, packetType uint8, w io.Writer) (err error)
 }
 
 //SpecificConfig comment
-func SpecificConfig() []byte {
-	return []byte{0x15, 0x88}
+// 0000 0|000 0|000 0|000
+func SpecificConfig(objectType, samplingFrequencyIndex, channelConfig uint8) []byte {
+	data := []byte{0x00, 0x00}
+	data[0] |= objectType << 3
+	data[0] |= samplingFrequencyIndex >> 1
+	data[1] |= samplingFrequencyIndex << 7
+	data[1] |= channelConfig << 3
+	return data
+	//return []byte{0x15, 0x88}
 }

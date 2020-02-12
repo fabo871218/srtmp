@@ -203,32 +203,53 @@ type Tag struct {
 	mediat mediaTag
 }
 
+//SoundFormat comment
 func (tag *Tag) SoundFormat() uint8 {
 	return tag.mediat.soundFormat
 }
 
+//SoundRate comment
+func (tag *Tag) SoundRate() uint8 {
+	return tag.mediat.soundRate
+}
+
+//SoundSize commnet
+func (tag *Tag) SoundSize() uint8 {
+	return tag.mediat.soundSize
+}
+
+//SoundType comment
+func (tag *Tag) SoundType() uint8 {
+	return tag.mediat.soundType
+}
+
+//AACPacketType comment
 func (tag *Tag) AACPacketType() uint8 {
 	return tag.mediat.aacPacketType
 }
 
+//IsKeyFrame comment
 func (tag *Tag) IsKeyFrame() bool {
 	return tag.mediat.frameType == av.FRAME_KEY
 }
 
+//IsSeq comment
 func (tag *Tag) IsSeq() bool {
 	return tag.mediat.frameType == av.FRAME_KEY &&
 		tag.mediat.avcPacketType == av.AVC_SEQHDR
 }
 
+//CodecID comment
 func (tag *Tag) CodecID() uint8 {
 	return tag.mediat.codecID
 }
 
+//CompositionTime comment
 func (tag *Tag) CompositionTime() int32 {
 	return tag.mediat.compositionTime
 }
 
-// ParseMeidaTagHeader, parse video, audio, tag header
+//ParseMeidaTagHeader parse video, audio, tag header
 func (tag *Tag) ParseMeidaTagHeader(b []byte, isVideo bool) (n int, err error) {
 	switch isVideo {
 	case false:
@@ -318,23 +339,60 @@ func NewAVCSequenceHeader(sps, pps []byte, timeStamp uint32) []byte {
 }
 
 //NewAACSequenceHeader comment
-func NewAACSequenceHeader(timeStamp uint32) []byte {
-	specificConfig := aac.SpecificConfig()
+func NewAACSequenceHeader(ah av.AudioPacketHeader) []byte {
+	var (
+		objectType             uint8
+		samplingFrequenceIndex uint8
+		channelConfiguration   uint8
+	)
+
+	objectType = 2           //AAC_LC
+	channelConfiguration = 1 //todo 先写死
+	switch ah.SoundRate() {
+	case av.SOUND_RATE_5_5Khz, av.SOUND_RATE_7Khz:
+		samplingFrequenceIndex = 4 //不支持5.5kHz, 7Khz
+	case av.SOUND_RATE_8Khz:
+		samplingFrequenceIndex = 11
+	case av.SOUND_RATE_11Khz:
+		samplingFrequenceIndex = 10
+	case av.SOUND_RATE_12Khz:
+		samplingFrequenceIndex = 9
+	case av.SOUND_RATE_16Khz:
+		samplingFrequenceIndex = 8
+	case av.SOUND_RATE_22Khz:
+		samplingFrequenceIndex = 7
+	case av.SOUND_RATE_24Khz:
+		samplingFrequenceIndex = 6
+	case av.SOUND_RATE_32Khz:
+		samplingFrequenceIndex = 5
+	case av.SOUND_RATE_44Khz:
+		samplingFrequenceIndex = 4
+	case av.SOUND_RATE_48Khz:
+		samplingFrequenceIndex = 3
+	case av.SOUND_RATE_64Khz:
+		samplingFrequenceIndex = 2
+	case av.SOUND_RATE_88Khz:
+		samplingFrequenceIndex = 1
+	case av.SOUND_RATE_96Khz:
+		samplingFrequenceIndex = 0
+	default:
+		samplingFrequenceIndex = 4
+	}
+	specificConfig := aac.SpecificConfig(objectType, samplingFrequenceIndex, channelConfiguration)
 	tag := &Tag{
 		flvt: flvTag{
-			fType:           av.TAG_AUDIO,
-			dataSize:        uint32(len(specificConfig)),
-			timeStamp:       timeStamp,
-			timeStampExtend: 0,
-			streamID:        0,
+			fType: av.TAG_AUDIO,
+			// dataSize:        uint32(len(specificConfig)),
+			// timeStamp:       timeStamp,
+			// timeStampExtend: 0,
+			// streamID:        0,
 		},
 		mediat: mediaTag{
-			soundFormat: av.SOUND_AAC,   //aac
-			soundRate:   av.SOUND_44Khz, //44KHz
-			soundSize:   av.SOUND_16BIT,
-			soundType:   av.SOUND_MONO, //单声道
-
-			aacPacketType: av.AAC_SEQHDR,
+			soundFormat:   ah.SoundFormat(), //aac
+			soundRate:     ah.SoundRate(),   //44KHz
+			soundSize:     ah.SoundSize(),
+			soundType:     ah.SoundType(), //单声道
+			aacPacketType: ah.AACPacketType(),
 		},
 	}
 
@@ -412,22 +470,21 @@ func NewAVCNaluData(src []byte, timeStamp uint32) (buffer []byte) {
 }
 
 //NewAACData comment
-func NewAACData(src []byte, timeStamp uint32) (buffer []byte) {
+func NewAACData(ah av.AudioPacketHeader, src []byte, timeStamp uint32) (buffer []byte) {
 	tag := &Tag{
 		flvt: flvTag{
 			fType:           av.TAG_AUDIO,
-			dataSize:        uint32(len(src)),
+			dataSize:        uint32(len(src)), //可能由上层协议作为一帧的分割，该字段没有效果
 			timeStamp:       timeStamp,
 			timeStampExtend: 0,
 			streamID:        0,
 		},
 		mediat: mediaTag{
-			soundFormat: av.SOUND_AAC,
-			soundRate:   av.SOUND_44Khz,
-			soundSize:   av.SOUND_16BIT,
-			soundType:   av.SOUND_MONO,
-
-			aacPacketType: av.AAC_RAW,
+			soundFormat:   ah.SoundFormat(),
+			soundRate:     ah.SoundRate(),
+			soundSize:     ah.SoundSize(),
+			soundType:     ah.SoundType(),
+			aacPacketType: ah.AACPacketType(),
 		},
 	}
 	tagBuffer := muxerTagData(tag)

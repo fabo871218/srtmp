@@ -346,8 +346,7 @@ func NewAACSequenceHeader(ah av.AudioPacketHeader) []byte {
 		channelConfiguration   uint8
 	)
 
-	objectType = 2           //AAC_LC
-	channelConfiguration = 1 //todo 先写死
+	objectType = 2 //AAC_LC
 	switch ah.SoundRate() {
 	case av.SOUND_RATE_5_5Khz, av.SOUND_RATE_7Khz:
 		samplingFrequenceIndex = 4 //不支持5.5kHz, 7Khz
@@ -378,6 +377,14 @@ func NewAACSequenceHeader(ah av.AudioPacketHeader) []byte {
 	default:
 		samplingFrequenceIndex = 4
 	}
+
+	if ah.SoundType() == av.SOUND_MONO {
+		channelConfiguration = 1
+	} else if ah.SoundType() == av.SOUND_STEREO {
+		channelConfiguration = 2
+	} else {
+		channelConfiguration = 2
+	}
 	specificConfig := aac.SpecificConfig(objectType, samplingFrequenceIndex, channelConfiguration)
 	tag := &Tag{
 		flvt: flvTag{
@@ -392,7 +399,7 @@ func NewAACSequenceHeader(ah av.AudioPacketHeader) []byte {
 			soundRate:     ah.SoundRate(),   //44KHz
 			soundSize:     ah.SoundSize(),
 			soundType:     ah.SoundType(), //单声道
-			aacPacketType: ah.AACPacketType(),
+			aacPacketType: av.AAC_SEQHDR,
 		},
 	}
 
@@ -484,7 +491,7 @@ func NewAACData(ah av.AudioPacketHeader, src []byte, timeStamp uint32) (buffer [
 			soundRate:     ah.SoundRate(),
 			soundSize:     ah.SoundSize(),
 			soundType:     ah.SoundType(),
-			aacPacketType: ah.AACPacketType(),
+			aacPacketType: av.AAC_RAW,
 		},
 	}
 	tagBuffer := muxerTagData(tag)

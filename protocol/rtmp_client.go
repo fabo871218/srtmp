@@ -12,20 +12,25 @@ import (
 type RtmpClient struct {
 	packetChan      chan *av.Packet
 	conn            *core.ConnClient
-	onPacketReceive func(av.Packet)
+	onPacketReceive func(*av.Packet)
+	onClosed        func()
 	isPublish       bool
 	videoFirst      bool //first packet to send
 	audioFirst      bool
+	demuxer         *flv.Demuxer
 }
 
+//NewRtmpClient comment
 func NewRtmpClient() *RtmpClient {
 	return &RtmpClient{
 		packetChan: make(chan *av.Packet, 16),
 		videoFirst: true,
 		audioFirst: true,
+		demuxer:    flv.NewDemuxer(),
 	}
 }
 
+//OpenPublish comment
 func (c *RtmpClient) OpenPublish(URL string) (err error) {
 	c.conn = core.NewConnClient()
 	if err = c.conn.Start(URL, "publish"); err != nil {
@@ -36,17 +41,20 @@ func (c *RtmpClient) OpenPublish(URL string) (err error) {
 	return
 }
 
-func (c *RtmpClient) OpenPlay(URL string, onPacketReceive func(av.Packet)) (err error) {
+//OpenPlay comment
+func (c *RtmpClient) OpenPlay(URL string, onPacketReceive func(*av.Packet), onClosed func()) (err error) {
 	c.conn = core.NewConnClient()
 	if err = c.conn.Start(URL, "play"); err != nil {
 		return
 	}
 
 	c.onPacketReceive = onPacketReceive
+	c.onClosed = onClosed
 	go c.streamPlayProc()
 	return
 }
 
+//Close comment
 func (c *RtmpClient) Close() error {
 	c.conn.Close()
 	return nil
@@ -149,5 +157,23 @@ func (c *RtmpClient) sendPacket(pkt *av.Packet) error {
 }
 
 func (c *RtmpClient) streamPlayProc() {
+	defer c.onClosed()
+	var cs core.ChunkStream
+	for {
+		if err := c.conn.Read(&cs); err != nil {
+			fmt.Printf("read chunk stream failed, %v", err)
+			break
+		}
 
+		var pkt av.Packet
+		pkt.IsAudio = cs.TypeID == av.TAG_AUDIO
+		pkt.IsVideo = cs.TypeID == av.TAG_VIDEO
+		pkt.IsMetadata = cs.TypeID == av.TAG_SCRIPTDATAAMF0 || cs.TypeID == av.TAG_SCRIPTDATAAMF3
+		pkt.StreamID = cs.StreamID
+		pkt.Data = cs.Data
+		pkt.TimeStamp = cs.Timestamp
+		c.demuxer.DemuxH(&pkt)
+
+		c.onPacketReceive(&pkt)
+	}
 }

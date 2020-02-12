@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -276,9 +275,7 @@ func (pr *PeerReader) Read(p *av.Packet) (err error) {
 		if err != nil {
 			return err
 		}
-		if cs.TypeID == av.TAG_AUDIO {
-			fmt.Printf("audio:%s\n", hex.EncodeToString(cs.Data[:20]))
-		}
+
 		if cs.TypeID == av.TAG_AUDIO ||
 			cs.TypeID == av.TAG_VIDEO ||
 			cs.TypeID == av.TAG_SCRIPTDATAAMF0 ||

@@ -280,11 +280,14 @@ func (s *RtmpStream) streamLoop() {
 				}
 
 				//检查每个writer是否超时
-				for i, w := range s.writers {
+				for i := 0; i < len(s.writers); {
+					w := s.writers[i]
 					if !w.Alive() {
 						s.writers = append(s.writers[:i], s.writers[i+1:]...)
 						w.Close() //todo 是否要传递关闭原因
 						lastWriteRemove = time.Now()
+					} else {
+						i++
 					}
 				}
 			}

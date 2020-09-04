@@ -36,19 +36,19 @@ type StreamReadWriteCloser interface {
 	Read(c *core.ChunkStream) error
 }
 
-//PeerWriter 是代表rtmp连接的写入对象
-type PeerWriter struct {
+//StreamWriter 是代表rtmp连接的写入对象
+type StreamWriter struct {
 	av.RWBaser
 	UID         string
 	closed      bool
-	conn        StreamReadWriteCloser
+	conn        *core.ClientConn
 	packetQueue chan *av.Packet
 	WriteBWInfo StaticsBW
 }
 
-//NewPeerWriter 创建一个新的写入对象
-func NewPeerWriter(conn StreamReadWriteCloser) *PeerWriter {
-	writer := &PeerWriter{
+//NewStreamWriter 创建一个新的写入对象
+func NewStreamWriter(conn *core.ClientConn) *StreamWriter {
+	writer := &StreamWriter{
 		UID:         utils.NewId(),
 		conn:        conn,
 		RWBaser:     av.NewRWBaser(time.Second * time.Duration(*writeTimeout)),
@@ -68,7 +68,7 @@ func NewPeerWriter(conn StreamReadWriteCloser) *PeerWriter {
 }
 
 //SaveStatics 保存统计信息
-func (pw *PeerWriter) SaveStatics(streamid uint32, length uint64, isVideoFlag bool) {
+func (pw *StreamWriter) SaveStatics(streamid uint32, length uint64, isVideoFlag bool) {
 	nowInMS := int64(time.Now().UnixNano() / 1e6)
 	pw.WriteBWInfo.StreamID = streamid
 	if isVideoFlag {
@@ -92,7 +92,7 @@ func (pw *PeerWriter) SaveStatics(streamid uint32, length uint64, isVideoFlag bo
 }
 
 //Check 连接状态检测
-func (pw *PeerWriter) Check() {
+func (pw *StreamWriter) Check() {
 	var c core.ChunkStream
 	for {
 		if err := pw.conn.Read(&c); err != nil {
@@ -103,7 +103,7 @@ func (pw *PeerWriter) Check() {
 }
 
 //DropPacket todo
-func (pw *PeerWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.StreamInfo) {
+func (pw *StreamWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.StreamInfo) {
 	fmt.Printf("[%v] packet queue max!!!\n", streamInfo)
 	for i := 0; i < maxQueueNum-84; i++ {
 		tmpPkt, ok := <-pktQue
@@ -133,8 +133,8 @@ func (pw *PeerWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.StreamInf
 	fmt.Printf("packet queue len: %d\n", len(pktQue))
 }
 
-//
-func (pw *PeerWriter) Write(p *av.Packet) (err error) {
+//Write ...
+func (pw *StreamWriter) Write(p *av.Packet) (err error) {
 	err = nil
 	if pw.closed {
 		err = errors.New("PeerWriter closed")
@@ -155,7 +155,7 @@ func (pw *PeerWriter) Write(p *av.Packet) (err error) {
 }
 
 //SendPacket todo comment
-func (pw *PeerWriter) SendPacket() error {
+func (pw *StreamWriter) SendPacket() error {
 	Flush := reflect.ValueOf(pw.conn).MethodByName("Flush")
 	var cs core.ChunkStream
 	for {
@@ -193,7 +193,7 @@ func (pw *PeerWriter) SendPacket() error {
 }
 
 //StreamInfo todo comment
-func (pw *PeerWriter) StreamInfo() (ret av.StreamInfo) {
+func (pw *StreamWriter) StreamInfo() (ret av.StreamInfo) {
 	ret.UID = pw.UID
 	_, _, URL := pw.conn.GetStreamInfo()
 	ret.URL = URL
@@ -207,7 +207,7 @@ func (pw *PeerWriter) StreamInfo() (ret av.StreamInfo) {
 }
 
 //Close todo comment
-func (pw *PeerWriter) Close() {
+func (pw *StreamWriter) Close() {
 	if !pw.closed {
 		close(pw.packetQueue)
 	}
@@ -215,18 +215,18 @@ func (pw *PeerWriter) Close() {
 	pw.conn.Close()
 }
 
-//PeerReader todo comment
-type PeerReader struct {
+//StreamReader todo comment
+type StreamReader struct {
 	av.RWBaser
 	UID        string
 	demuxer    *flv.Demuxer
-	conn       StreamReadWriteCloser
+	conn       *core.ClientConn
 	ReadBWInfo StaticsBW
 }
 
-//NewPeerReader 创建一个rtmp连接读对象
-func NewPeerReader(conn StreamReadWriteCloser) *PeerReader {
-	return &PeerReader{
+//NewStreamReader 创建一个rtmp连接读对象
+func NewStreamReader(conn *core.ClientConn) *StreamReader {
+	return &StreamReader{
 		UID:        utils.NewId(),
 		conn:       conn,
 		RWBaser:    av.NewRWBaser(time.Second * time.Duration(*writeTimeout)),
@@ -236,7 +236,7 @@ func NewPeerReader(conn StreamReadWriteCloser) *PeerReader {
 }
 
 //SaveStatics todo comment
-func (pr *PeerReader) SaveStatics(streamid uint32, length uint64, isVideoFlag bool) {
+func (pr *StreamReader) SaveStatics(streamid uint32, length uint64, isVideoFlag bool) {
 	nowInMS := int64(time.Now().UnixNano() / 1e6)
 
 	pr.ReadBWInfo.StreamID = streamid
@@ -261,7 +261,7 @@ func (pr *PeerReader) SaveStatics(streamid uint32, length uint64, isVideoFlag bo
 	}
 }
 
-func (pr *PeerReader) Read(p *av.Packet) (err error) {
+func (pr *StreamReader) Read(p *av.Packet) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("rtmp read packet panic: %v\n", r)
@@ -296,8 +296,8 @@ func (pr *PeerReader) Read(p *av.Packet) (err error) {
 	return err
 }
 
-//Info 返回信息
-func (pr *PeerReader) StreamInfo() (ret av.StreamInfo) {
+//StreamInfo 返回信息
+func (pr *StreamReader) StreamInfo() (ret av.StreamInfo) {
 	ret.UID = pr.UID
 	_, _, URL := pr.conn.GetStreamInfo()
 	ret.URL = URL
@@ -310,6 +310,6 @@ func (pr *PeerReader) StreamInfo() (ret av.StreamInfo) {
 }
 
 //Close 关闭读对象
-func (pr *PeerReader) Close() {
+func (pr *StreamReader) Close() {
 	pr.conn.Close()
 }

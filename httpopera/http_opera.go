@@ -101,8 +101,8 @@ func (server *Server) GetLiveStatics(w http.ResponseWriter, req *http.Request) {
 	for _, s := range streamHandler.GetStreams() {
 		if s.GetReader() != nil {
 			switch s.GetReader().(type) {
-			case *protocol.PeerReader:
-				v := s.GetReader().(*protocol.PeerReader)
+			case *protocol.StreamReader:
+				v := s.GetReader().(*protocol.StreamReader)
 				msg := stream{v.StreamInfo().Key, v.StreamInfo().URL, v.ReadBWInfo.StreamID, v.ReadBWInfo.VideoSpeedInBytesperMS,
 					v.ReadBWInfo.AudioDatainBytes, v.ReadBWInfo.AudioSpeedInBytesperMS}
 				msgs.Publishers = append(msgs.Publishers, msg)

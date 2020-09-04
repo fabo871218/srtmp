@@ -1,21 +1,30 @@
 package srtmp
 
-import "github.com/fabo871218/srtmp/protocol"
+import (
+	"errors"
 
-var (
-	DefaultHandler *protocol.StreamHandler
+	"github.com/fabo871218/srtmp/logger"
+	"github.com/fabo871218/srtmp/protocol"
 )
 
-func init() {
-	DefaultHandler = protocol.NewRtmpStream()
-}
+//ServeRtmp start rtmp server
+func ServeRtmp(addr string, opts ...SettingFunc) error {
+	if addr == "" {
+		return errors.New("addr is not allowed to be empty")
+	}
 
-func ServeRtmp(addr string) error {
-	server := protocol.NewRtmpServer(DefaultHandler, nil)
+	setting := &SettingEngine{}
+	for _, v := range opts {
+		v(setting)
+	}
+
+	if setting.loggerFactory == nil {
+		setting.loggerFactory = logger.NewDefaultFactory()
+	}
+
+	server := protocol.NewRtmpServer(protocol.NewRtmpStream(), nil, setting.loggerFactory.NewLogger("Info"))
+	if setting.tlsEnabled {
+		return server.ServeTLS(addr, setting.tlsCrt, setting.tlsKey)
+	}
 	return server.Serve(addr)
-}
-
-func ServeRtmpTLS(addr, tlsCrt, tlsKey string) error {
-	server := protocol.NewRtmpServer(DefaultHandler, nil)
-	return server.ServeTLS(addr, tlsCrt, tlsKey)
 }

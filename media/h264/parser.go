@@ -141,7 +141,6 @@ func (parser *Parser) parseSpecificInfo(src []byte) error {
 		return ppsDataError
 	}
 
-	fmt.Println(seq)
 	pps = append(pps, StartCode4...)
 	pps = append(pps, tmpBuf[3:]...)
 

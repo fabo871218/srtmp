@@ -7,4 +7,5 @@ require (
 	github.com/pion/logging v0.2.2 // indirect
 	github.com/satori/go.uuid v1.2.0
 	github.com/stretchr/testify v1.4.0
+	registry.code.tuya-inc.top/TuyaBEMiddleWare/golib v1.0.0
 )

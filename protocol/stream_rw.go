@@ -10,8 +10,14 @@ import (
 
 	"github.com/fabo871218/srtmp/av"
 	"github.com/fabo871218/srtmp/container/flv"
+	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/protocol/core"
 	"github.com/fabo871218/srtmp/utils"
+)
+
+const (
+	maxQueueNum         = 1024
+	saveStaticsInterval = 5000
 )
 
 //StaticsBW todo comment
@@ -44,16 +50,18 @@ type StreamWriter struct {
 	conn        *core.ClientConn
 	packetQueue chan *av.Packet
 	WriteBWInfo StaticsBW
+	logger      logger.Logger
 }
 
 //NewStreamWriter 创建一个新的写入对象
-func NewStreamWriter(conn *core.ClientConn) *StreamWriter {
+func NewStreamWriter(conn *core.ClientConn, log logger.Logger) *StreamWriter {
 	writer := &StreamWriter{
 		UID:         utils.NewId(),
 		conn:        conn,
-		RWBaser:     av.NewRWBaser(time.Second * time.Duration(*writeTimeout)),
+		RWBaser:     av.NewRWBaser(time.Second * 10),
 		packetQueue: make(chan *av.Packet, maxQueueNum),
 		WriteBWInfo: StaticsBW{0, 0, 0, 0, 0, 0, 0, 0},
+		logger:      log,
 	}
 
 	//todo 这个是否有必要先检查一下读写情况
@@ -61,56 +69,56 @@ func NewStreamWriter(conn *core.ClientConn) *StreamWriter {
 	go func() {
 		err := writer.SendPacket()
 		if err != nil {
-			fmt.Printf("writer.SendPacket failed, %v\n", err)
+			writer.logger.Errorf("SendPacket failed, %s", err.Error())
 		}
 	}()
 	return writer
 }
 
 //SaveStatics 保存统计信息
-func (pw *StreamWriter) SaveStatics(streamid uint32, length uint64, isVideoFlag bool) {
+func (sw *StreamWriter) SaveStatics(streamid uint32, length uint64, isVideoFlag bool) {
 	nowInMS := int64(time.Now().UnixNano() / 1e6)
-	pw.WriteBWInfo.StreamID = streamid
+	sw.WriteBWInfo.StreamID = streamid
 	if isVideoFlag {
-		pw.WriteBWInfo.VideoDatainBytes = pw.WriteBWInfo.VideoDatainBytes + length
+		sw.WriteBWInfo.VideoDatainBytes = sw.WriteBWInfo.VideoDatainBytes + length
 	} else {
-		pw.WriteBWInfo.AudioDatainBytes = pw.WriteBWInfo.AudioDatainBytes + length
+		sw.WriteBWInfo.AudioDatainBytes = sw.WriteBWInfo.AudioDatainBytes + length
 	}
 
-	if pw.WriteBWInfo.LastTimestamp == 0 {
-		pw.WriteBWInfo.LastTimestamp = nowInMS
-	} else if (nowInMS - pw.WriteBWInfo.LastTimestamp) >= SAVE_STATICS_INTERVAL {
-		diffTimestamp := (nowInMS - pw.WriteBWInfo.LastTimestamp) / 1000
+	if sw.WriteBWInfo.LastTimestamp == 0 {
+		sw.WriteBWInfo.LastTimestamp = nowInMS
+	} else if (nowInMS - sw.WriteBWInfo.LastTimestamp) >= saveStaticsInterval {
+		diffTimestamp := (nowInMS - sw.WriteBWInfo.LastTimestamp) / 1000
 
-		pw.WriteBWInfo.VideoSpeedInBytesperMS = (pw.WriteBWInfo.VideoDatainBytes - pw.WriteBWInfo.LastVideoDatainBytes) * 8 / uint64(diffTimestamp) / 1000
-		pw.WriteBWInfo.AudioSpeedInBytesperMS = (pw.WriteBWInfo.AudioDatainBytes - pw.WriteBWInfo.LastAudioDatainBytes) * 8 / uint64(diffTimestamp) / 1000
+		sw.WriteBWInfo.VideoSpeedInBytesperMS = (sw.WriteBWInfo.VideoDatainBytes - sw.WriteBWInfo.LastVideoDatainBytes) * 8 / uint64(diffTimestamp) / 1000
+		sw.WriteBWInfo.AudioSpeedInBytesperMS = (sw.WriteBWInfo.AudioDatainBytes - sw.WriteBWInfo.LastAudioDatainBytes) * 8 / uint64(diffTimestamp) / 1000
 
-		pw.WriteBWInfo.LastVideoDatainBytes = pw.WriteBWInfo.VideoDatainBytes
-		pw.WriteBWInfo.LastAudioDatainBytes = pw.WriteBWInfo.AudioDatainBytes
-		pw.WriteBWInfo.LastTimestamp = nowInMS
+		sw.WriteBWInfo.LastVideoDatainBytes = sw.WriteBWInfo.VideoDatainBytes
+		sw.WriteBWInfo.LastAudioDatainBytes = sw.WriteBWInfo.AudioDatainBytes
+		sw.WriteBWInfo.LastTimestamp = nowInMS
 	}
 }
 
 //Check 连接状态检测
-func (pw *StreamWriter) Check() {
+func (sw *StreamWriter) Check() {
 	var c core.ChunkStream
 	for {
-		if err := pw.conn.Read(&c); err != nil {
-			pw.Close()
+		if err := sw.conn.Read(&c); err != nil {
+			sw.Close()
 			return
 		}
 	}
 }
 
 //DropPacket todo
-func (pw *StreamWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.StreamInfo) {
-	fmt.Printf("[%v] packet queue max!!!\n", streamInfo)
+func (sw *StreamWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.StreamInfo) {
+	sw.logger.Debugf("[%v] packet queue max!!!", streamInfo)
 	for i := 0; i < maxQueueNum-84; i++ {
 		tmpPkt, ok := <-pktQue
 		// try to don't drop audio
 		if ok && tmpPkt.IsAudio {
 			if len(pktQue) > maxQueueNum-2 {
-				fmt.Println("drop audio pkt")
+				sw.logger.Warn("Drop audio pkt")
 				<-pktQue
 			} else {
 				pktQue <- tmpPkt
@@ -125,18 +133,18 @@ func (pw *StreamWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.StreamI
 				pktQue <- tmpPkt
 			}
 			if len(pktQue) > maxQueueNum-10 {
-				fmt.Println("drop video pkt")
+				sw.logger.Warn("Drop video pkt")
 				<-pktQue
 			}
 		}
 	}
-	fmt.Printf("packet queue len: %d\n", len(pktQue))
+	sw.logger.Debugf("Packet queue len: %d", len(pktQue))
 }
 
 //Write ...
-func (pw *StreamWriter) Write(p *av.Packet) (err error) {
+func (sw *StreamWriter) Write(p *av.Packet) (err error) {
 	err = nil
-	if pw.closed {
+	if sw.closed {
 		err = errors.New("PeerWriter closed")
 		return
 	}
@@ -146,26 +154,26 @@ func (pw *StreamWriter) Write(p *av.Packet) (err error) {
 			err = errors.New(errString)
 		}
 	}()
-	if len(pw.packetQueue) >= maxQueueNum-24 {
-		pw.DropPacket(pw.packetQueue, pw.StreamInfo())
+	if len(sw.packetQueue) >= maxQueueNum-24 {
+		sw.DropPacket(sw.packetQueue, sw.StreamInfo())
 	} else {
-		pw.packetQueue <- p
+		sw.packetQueue <- p
 	}
 	return
 }
 
 //SendPacket todo comment
-func (pw *StreamWriter) SendPacket() error {
-	Flush := reflect.ValueOf(pw.conn).MethodByName("Flush")
+func (sw *StreamWriter) SendPacket() error {
+	Flush := reflect.ValueOf(sw.conn).MethodByName("Flush")
 	var cs core.ChunkStream
 	for {
-		p, ok := <-pw.packetQueue
+		p, ok := <-sw.packetQueue
 		if ok {
 			cs.Data = p.Data
 			cs.Length = uint32(len(p.Data))
 			cs.StreamID = p.StreamID
 			cs.Timestamp = p.TimeStamp
-			cs.Timestamp += pw.BaseTimeStamp()
+			cs.Timestamp += sw.BaseTimeStamp()
 
 			if p.IsVideo {
 				cs.TypeID = av.TAG_VIDEO
@@ -177,12 +185,12 @@ func (pw *StreamWriter) SendPacket() error {
 				}
 			}
 
-			pw.SaveStatics(p.StreamID, uint64(cs.Length), p.IsVideo)
-			pw.SetPreTime()
-			pw.RecTimeStamp(cs.Timestamp, cs.TypeID)
-			err := pw.conn.Write(cs)
+			sw.SaveStatics(p.StreamID, uint64(cs.Length), p.IsVideo)
+			sw.SetPreTime()
+			sw.RecTimeStamp(cs.Timestamp, cs.TypeID)
+			err := sw.conn.Write(cs)
 			if err != nil {
-				pw.closed = true
+				sw.closed = true
 				return err
 			}
 			Flush.Call(nil)
@@ -193,9 +201,9 @@ func (pw *StreamWriter) SendPacket() error {
 }
 
 //StreamInfo todo comment
-func (pw *StreamWriter) StreamInfo() (ret av.StreamInfo) {
-	ret.UID = pw.UID
-	_, _, URL := pw.conn.GetStreamInfo()
+func (sw *StreamWriter) StreamInfo() (ret av.StreamInfo) {
+	ret.UID = sw.UID
+	_, _, URL := sw.conn.GetStreamInfo()
 	ret.URL = URL
 	_url, err := url.Parse(URL)
 	if err != nil {
@@ -207,12 +215,12 @@ func (pw *StreamWriter) StreamInfo() (ret av.StreamInfo) {
 }
 
 //Close todo comment
-func (pw *StreamWriter) Close() {
-	if !pw.closed {
-		close(pw.packetQueue)
+func (sw *StreamWriter) Close() {
+	if !sw.closed {
+		close(sw.packetQueue)
 	}
-	pw.closed = true
-	pw.conn.Close()
+	sw.closed = true
+	sw.conn.Close()
 }
 
 //StreamReader todo comment
@@ -222,16 +230,18 @@ type StreamReader struct {
 	demuxer    *flv.Demuxer
 	conn       *core.ClientConn
 	ReadBWInfo StaticsBW
+	logger     logger.Logger
 }
 
 //NewStreamReader 创建一个rtmp连接读对象
-func NewStreamReader(conn *core.ClientConn) *StreamReader {
+func NewStreamReader(conn *core.ClientConn, log logger.Logger) *StreamReader {
 	return &StreamReader{
 		UID:        utils.NewId(),
 		conn:       conn,
-		RWBaser:    av.NewRWBaser(time.Second * time.Duration(*writeTimeout)),
+		RWBaser:    av.NewRWBaser(time.Second * 10),
 		demuxer:    flv.NewDemuxer(),
 		ReadBWInfo: StaticsBW{0, 0, 0, 0, 0, 0, 0, 0},
+		logger:     log,
 	}
 }
 
@@ -248,7 +258,7 @@ func (pr *StreamReader) SaveStatics(streamid uint32, length uint64, isVideoFlag 
 
 	if pr.ReadBWInfo.LastTimestamp == 0 {
 		pr.ReadBWInfo.LastTimestamp = nowInMS
-	} else if (nowInMS - pr.ReadBWInfo.LastTimestamp) >= SAVE_STATICS_INTERVAL {
+	} else if (nowInMS - pr.ReadBWInfo.LastTimestamp) >= saveStaticsInterval {
 		diffTimestamp := (nowInMS - pr.ReadBWInfo.LastTimestamp) / 1000
 
 		//glog.Infof("now=%d, last=%d, diff=%d", nowInMS, v.ReadBWInfo.LastTimestamp, diffTimestamp)

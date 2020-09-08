@@ -1,104 +1,13 @@
 package protocol
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
 	"github.com/fabo871218/srtmp/av"
+	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/protocol/cache"
 )
-
-var (
-	EmptyID = ""
-)
-
-type StreamHandler struct {
-	//streams cmap.ConcurrentMap //key
-
-	mutex   sync.Mutex
-	streams map[string]*RtmpStream
-}
-
-func NewRtmpStream() *StreamHandler {
-	handler := &StreamHandler{
-		streams: make(map[string]*RtmpStream),
-	}
-	return handler
-}
-
-//get rtmp stream, if not exist, create a new one
-//bool indicate weathe the stream is new, true-new false-not
-func (h *StreamHandler) getOrCreate(streamInfo av.StreamInfo) *RtmpStream {
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
-	if stream, ok := h.streams[streamInfo.Key]; ok {
-		return stream
-	}
-
-	stream := NewStream(streamInfo, h)
-	h.streams[streamInfo.Key] = stream
-	go stream.streamLoop()
-	return stream
-}
-
-func (h *StreamHandler) remove(key string) {
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
-	if _, ok := h.streams[key]; ok {
-		delete(h.streams, key)
-	}
-}
-
-//GetStreams 获取所有的流
-func (h *StreamHandler) GetStreams() []*RtmpStream {
-	streams := make([]*RtmpStream, 0)
-	h.mutex.Lock()
-	defer h.mutex.Unlock()
-	for _, v := range h.streams {
-		streams = append(streams, v)
-	}
-	return streams
-}
-
-//HandleReader 创建和添加一个新的rtmp stream
-//todo 要判断是否有错误
-func (h *StreamHandler) HandleReader(r av.ReadCloser) error {
-	stream := h.getOrCreate(r.StreamInfo())
-	if err := stream.AddReader(r); err != nil {
-		return fmt.Errorf("stream.AddReader faile, %v", err)
-	}
-	return nil
-	// var stream *RtmpStream
-	// i, ok := rs.streams.Get(streamInfo.Key)
-	// if stream, ok = i.(*RtmpStream); ok {
-	// 	glog.Infof("find stream:%s stop and rebuild.", streamInfo.Key)
-	// 	stream.TransStop()
-	// 	id := stream.ID()
-	// 	if id != EmptyID && id != streamInfo.UID {
-	// 		ns := NewStream()
-	// 		stream.Copy(ns)
-	// 		stream = ns
-	// 		rs.streams.Set(streamInfo.Key, ns)
-	// 	}
-	// } else {
-	// 	stream = NewStream()
-	// 	rs.streams.Set(streamInfo.Key, stream)
-	// 	stream.streamInfo = streamInfo
-	// }
-
-	// stream.AddReader(r)
-}
-
-//HandleWriter 处理rtmp写入对象
-//todo 要判断是否有错误
-func (h *StreamHandler) HandleWriter(w av.WriteCloser) error {
-	stream := h.getOrCreate(w.StreamInfo())
-	if err := stream.AddWriter(w); err != nil {
-		return fmt.Errorf("stream.AddWriter faile, %v", err)
-	}
-	return nil
-}
 
 //RtmpStream rtmp流类型
 type RtmpStream struct {
@@ -112,6 +21,7 @@ type RtmpStream struct {
 	writerChan    chan av.WriteCloser
 	readerChan    chan av.ReadCloser
 	streamHandler *StreamHandler
+	logger        logger.Logger
 }
 
 //PackWriterCloser packet写对象结构
@@ -126,7 +36,7 @@ func (p *PackWriterCloser) NewWriter() (av.WriteCloser, error) {
 }
 
 //NewStream 创建新的rtmp流
-func NewStream(streamInfo av.StreamInfo, handler *StreamHandler) *RtmpStream {
+func NewStream(streamInfo av.StreamInfo, handler *StreamHandler, log logger.Logger) *RtmpStream {
 	return &RtmpStream{
 		streamInfo:    streamInfo,
 		cache:         cache.NewCache(),
@@ -135,6 +45,7 @@ func NewStream(streamInfo av.StreamInfo, handler *StreamHandler) *RtmpStream {
 		writerChan:    make(chan av.WriteCloser, 1),
 		readerChan:    make(chan av.ReadCloser, 1),
 		pktChan:       make(chan *av.Packet, 16),
+		logger:        log,
 	}
 }
 
@@ -143,7 +54,7 @@ func (s *RtmpStream) ID() string {
 	if s.reader != nil {
 		return s.reader.StreamInfo().UID
 	}
-	return EmptyID
+	return ""
 }
 
 //GetReader 获取rtmp流读对象
@@ -169,37 +80,34 @@ func (s *RtmpStream) AddWriter(w av.WriteCloser) error {
 
 //开始读取流数据
 func (s *RtmpStream) startRead(wg *sync.WaitGroup) {
-	fmt.Printf("Start to read data, name:%s\n", s.streamInfo.Key)
+	s.logger.Infof("Start ot read data, name:%s", s.streamInfo.Key)
 	wg.Add(1)
 	defer wg.Done()
 	for {
 		pkt := &av.Packet{}
 		if err := s.reader.Read(pkt); err != nil {
-			fmt.Printf("Read pkt failed, %v\n", err)
+			s.logger.Errorf("Read pkt failed, %s", err.Error())
 			return
 		}
 
+		//先缓存数据包
 		s.cache.Write(*pkt)
 		select {
 		case s.pktChan <- pkt:
-			{
-			}
 		default:
-			{
-			}
 		}
 	}
 }
 
 //转发流数据
 func (s *RtmpStream) streamLoop() {
-	fmt.Printf("start stream loop, %s\n", s.streamInfo.Key)
+	s.logger.Infof("Start stream loop, %s", s.streamInfo.Key)
 	checkTicker := time.NewTicker(time.Second * 30)
 	defer func() {
 		s.streamHandler.remove(s.streamInfo.Key)
 		s.close()
 		checkTicker.Stop()
-		fmt.Printf("rtmp stream[%s] exit.\n", s.streamInfo.Key)
+		s.logger.Infof("Rtmp stream[%s] exit.", s.streamInfo.Key)
 	}()
 
 	var wg sync.WaitGroup
@@ -211,7 +119,7 @@ func (s *RtmpStream) streamLoop() {
 				bRemove := false
 				for i, w := range s.writers {
 					if err := w.Write(pkt); err != nil {
-						fmt.Printf("write packet failed, %v close writer", err)
+						s.logger.Infof("Write packet failed, %s close writer.", err.Error())
 						w.Close() //todo 是否要传递参数
 						s.writers[i] = nil
 						bRemove = true
@@ -232,7 +140,7 @@ func (s *RtmpStream) streamLoop() {
 		case w := <-s.writerChan:
 			{
 				if err := s.cache.Send(w); err != nil {
-					fmt.Printf("s.cache.Send failed, %v\n", err)
+					s.logger.Errorf("Send cache failed, %s", err.Error())
 					w.Close()
 				} else {
 					s.writers = append(s.writers, w)
@@ -249,12 +157,8 @@ func (s *RtmpStream) streamLoop() {
 					for {
 						select {
 						case <-s.pktChan:
-							{
-							}
 						default:
-							{
-								break CleanLoop
-							}
+							break CleanLoop
 						}
 					}
 					//更新一下基本时间戳，保证每个writer的时间戳都是递增的
@@ -269,13 +173,13 @@ func (s *RtmpStream) streamLoop() {
 			{
 				//检查是否有writer，没有则释放
 				if len(s.writers) == 0 && time.Now().Sub(lastWriteRemove) >= 30 {
-					fmt.Println("stream no play...")
+					s.logger.Debug("Stream no play...")
 					//return
 				}
 
 				//检查是否有reader
 				if s.reader == nil || !s.reader.Alive() {
-					fmt.Printf("stream reader is nil(%v) or not alive, exit\n", s.reader == nil)
+					s.logger.Debugf("Stream reader is nil(%v) or not alive, exit", s.reader == nil)
 					return
 				}
 
@@ -298,7 +202,7 @@ func (s *RtmpStream) streamLoop() {
 func (s *RtmpStream) close() {
 	if s.reader != nil {
 		s.reader.Close()
-		fmt.Printf("[%s] publisher closed\n", s.reader.StreamInfo().Key)
+		s.logger.Infof("[%s] publish closed.", s.reader.StreamInfo().Key)
 	}
 
 	//可能writerChan或readerChan中有未处理的writer和reader
@@ -307,17 +211,11 @@ CloseLoop:
 	for {
 		select {
 		case w := <-s.writerChan:
-			{
-				w.Close()
-			}
+			w.Close()
 		case r := <-s.readerChan:
-			{
-				r.Close()
-			}
+			r.Close()
 		default:
-			{
-				break CloseLoop
-			}
+			break CloseLoop
 		}
 	}
 

@@ -146,7 +146,8 @@ func main() {
 		}
 	}()
 
-	if err := srtmp.ServeRtmp(":1935"); err != nil {
+	api := srtmp.NewAPI()
+	if err := api.ServeRtmp(":1935"); err != nil {
 		fmt.Println("Servr rtmp failed, err:", err)
 		return
 	}

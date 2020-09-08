@@ -1,14 +1,16 @@
-package protocol
+package srtmp
 
 import (
 	"fmt"
 
 	"github.com/fabo871218/srtmp/av"
 	"github.com/fabo871218/srtmp/container/flv"
+	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/media/h264"
 	"github.com/fabo871218/srtmp/protocol/core"
 )
 
+//RtmpClient ...
 type RtmpClient struct {
 	packetChan      chan *av.Packet
 	conn            *core.ConnClient
@@ -18,21 +20,23 @@ type RtmpClient struct {
 	videoFirst      bool //first packet to send
 	audioFirst      bool
 	demuxer         *flv.Demuxer
+	logger          logger.Logger
 }
 
 //NewRtmpClient comment
-func NewRtmpClient() *RtmpClient {
+func NewRtmpClient(log logger.Logger) *RtmpClient {
 	return &RtmpClient{
 		packetChan: make(chan *av.Packet, 16),
 		videoFirst: true,
 		audioFirst: true,
 		demuxer:    flv.NewDemuxer(),
+		logger:     log,
 	}
 }
 
 //OpenPublish comment
 func (c *RtmpClient) OpenPublish(URL string) (err error) {
-	c.conn = core.NewConnClient()
+	c.conn = core.NewConnClient(c.logger)
 	if err = c.conn.Start(URL, "publish"); err != nil {
 		return
 	}
@@ -43,7 +47,7 @@ func (c *RtmpClient) OpenPublish(URL string) (err error) {
 
 //OpenPlay comment
 func (c *RtmpClient) OpenPlay(URL string, onPacketReceive func(*av.Packet), onClosed func()) (err error) {
-	c.conn = core.NewConnClient()
+	c.conn = core.NewConnClient(c.logger)
 	if err = c.conn.Start(URL, "play"); err != nil {
 		return
 	}

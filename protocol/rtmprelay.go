@@ -2,10 +2,10 @@ package protocol
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 
+	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/protocol/amf"
 	"github.com/fabo871218/srtmp/protocol/core"
 )
@@ -22,6 +22,7 @@ type RtmpRelay struct {
 	connectPlayClient    *core.ConnClient
 	connectPublishClient *core.ConnClient
 	startflag            bool
+	logger               logger.Logger
 }
 
 func NewRtmpRelay(playurl *string, publishurl *string) *RtmpRelay {
@@ -82,16 +83,16 @@ func (self *RtmpRelay) sendPublishChunkStream() {
 	}
 }
 
+//Start ...
 func (self *RtmpRelay) Start() error {
 	if self.startflag {
-		err := errors.New(fmt.Sprintf("The rtmprelay already started, playurl=%s, publishurl=%s", self.PlayUrl, self.PublishUrl))
-		return err
+		return fmt.Errorf("The rtmprelay already started, playurl=%s, publishurl=%s", self.PlayUrl, self.PublishUrl)
 	}
 
-	self.connectPlayClient = core.NewConnClient()
-	self.connectPublishClient = core.NewConnClient()
+	self.connectPlayClient = core.NewConnClient(self.logger)
+	self.connectPublishClient = core.NewConnClient(self.logger)
 
-	fmt.Printf("play server addr:%v starting....\n", self.PlayUrl)
+	self.logger.Debugf("Play server addr:%s starting....", self.PlayUrl)
 	err := self.connectPlayClient.Start(self.PlayUrl, "play")
 	if err != nil {
 		fmt.Printf("connectPlayClient.Start url=%v error\n", self.PlayUrl)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/fabo871218/srtmp/av"
 	"github.com/fabo871218/srtmp/configure"
+	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/protocol/core"
 )
 
@@ -16,6 +17,7 @@ type StaticPush struct {
 	sndctrl_chan  chan string
 	connectClient *core.ConnClient
 	startflag     bool
+	logger        logger.Logger
 }
 
 var G_StaticPushMap = make(map[string](*StaticPush))
@@ -95,7 +97,7 @@ func (self *StaticPush) Start() error {
 		return errors.New(fmt.Sprintf("StaticPush already start %s", self.RtmpUrl))
 	}
 
-	self.connectClient = core.NewConnClient()
+	self.connectClient = core.NewConnClient(self.logger)
 
 	fmt.Printf("static publish server addr:%v starting....\n", self.RtmpUrl)
 	err := self.connectClient.Start(self.RtmpUrl, "publish")

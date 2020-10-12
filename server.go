@@ -2,7 +2,6 @@ package srtmp
 
 import (
 	"crypto/tls"
-	"flag"
 	"fmt"
 	"net"
 	"time"
@@ -12,16 +11,6 @@ import (
 	"github.com/fabo871218/srtmp/protocol"
 	"github.com/fabo871218/srtmp/protocol/core"
 	"registry.code.tuya-inc.top/TuyaBEMiddleWare/golib/golog"
-)
-
-const (
-	maxQueueNum         = 1024
-	saveStaticsInterval = 5000
-)
-
-var (
-	readTimeout  = flag.Int("readTimeout", 10, "read time out")
-	writeTimeout = flag.Int("writeTimeout", 10, "write time out")
 )
 
 //Server rtmpfuwu
@@ -128,7 +117,7 @@ func (s *Server) handleConn(rtmpConn *core.RtmpConn) {
 		return
 	}
 	//创建一个服务端连接
-	clientConn := core.NewClientConn(rtmpConn)
+	clientConn := core.NewClientConn(rtmpConn, s.logger)
 	if err = clientConn.SetUpPlayOrPublish(); err != nil {
 		s.logger.Errorf("SetUpPlayOrPublish failed, %s", err.Error())
 		return

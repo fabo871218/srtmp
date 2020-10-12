@@ -78,5 +78,5 @@ func (log defaultLogger) output(callDepth int, level LogLevel, s string) {
 	}
 
 	index := strings.LastIndex(file, "/")
-	fmt.Printf("%s %s %s:%d     %s\n", time.Now().Format("2006-01-02 15:04:05"), level.String(), file[index+1:], line, s)
+	fmt.Printf("%s %s %s:%d     %s\n", time.Now().Format("2006-01-02 15:04:05.000"), level.String(), file[index+1:], line, s)
 }

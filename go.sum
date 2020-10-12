@@ -69,3 +69,5 @@ registry.code.tuya-inc.top/TuyaBEMiddleWare/glog v1.0.1 h1:AbMxJ5ZxmencbVziGywjg
 registry.code.tuya-inc.top/TuyaBEMiddleWare/glog v1.0.1/go.mod h1:sPBqQSu9XpJv0efOrp5Mq0W2pJ5si0r5XaqOslAtOfU=
 registry.code.tuya-inc.top/TuyaBEMiddleWare/golib v1.0.0 h1:W9VkrnWwQVGYHF7DuVZc27+hFdnna4tIv2Lmyg3GXJk=
 registry.code.tuya-inc.top/TuyaBEMiddleWare/golib v1.0.0/go.mod h1:b5yez2XXcXkHcbTOK8oiEJYdEY3DcUTu3N2eCedGylk=
+registry.code.tuya-inc.top/jiangfb/srtmp v0.0.0-20200123132833-c0122f4a2c20 h1:ES4yDb0AaW7SV0hmo1GzCcpk6tfsxIEcf8YuFeNaKgw=
+registry.code.tuya-inc.top/jiangfb/srtmp v0.0.0-20200123132833-c0122f4a2c20/go.mod h1:76C1nod3AmBQGh7YU3KHHtgiu6tD929lRZJ9aKjWm3E=

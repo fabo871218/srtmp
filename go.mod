@@ -8,4 +8,5 @@ require (
 	github.com/satori/go.uuid v1.2.0
 	github.com/stretchr/testify v1.4.0
 	registry.code.tuya-inc.top/TuyaBEMiddleWare/golib v1.0.0
+	registry.code.tuya-inc.top/jiangfb/srtmp v0.0.0-20200123132833-c0122f4a2c20 // indirect
 )

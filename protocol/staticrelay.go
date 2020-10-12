@@ -105,7 +105,7 @@ func (self *StaticPush) Start() error {
 		fmt.Printf("connectClient.Start url=%v error\n", self.RtmpUrl)
 		return err
 	}
-	fmt.Printf("static publish server addr:%v started, streamid=%d\n", self.RtmpUrl, self.connectClient.GetStreamId())
+	fmt.Printf("static publish server addr:%v started, streamid=%d\n", self.RtmpUrl, self.connectClient.GetStreamID())
 	go self.HandleAvPacket()
 
 	self.startflag = true
@@ -138,7 +138,7 @@ func (self *StaticPush) sendPacket(p *av.Packet) {
 
 	cs.Data = p.Data
 	cs.Length = uint32(len(p.Data))
-	cs.StreamID = self.connectClient.GetStreamId()
+	cs.StreamID = self.connectClient.GetStreamID()
 	cs.Timestamp = p.TimeStamp
 	//cs.Timestamp += v.BaseTimeStamp()
 
@@ -154,7 +154,7 @@ func (self *StaticPush) sendPacket(p *av.Packet) {
 		}
 	}
 
-	self.connectClient.Write(cs)
+	self.connectClient.Write(&cs)
 }
 
 func (self *StaticPush) HandleAvPacket() {

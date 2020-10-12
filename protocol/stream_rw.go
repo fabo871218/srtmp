@@ -101,9 +101,9 @@ func (sw *StreamWriter) SaveStatics(streamid uint32, length uint64, isVideoFlag 
 
 //Check 连接状态检测
 func (sw *StreamWriter) Check() {
-	var c core.ChunkStream
 	for {
-		if err := sw.conn.Read(&c); err != nil {
+		_, err := sw.conn.Read()
+		if err != nil {
 			sw.Close()
 			return
 		}
@@ -279,10 +279,9 @@ func (pr *StreamReader) Read(p *av.Packet) (err error) {
 	}()
 
 	pr.SetPreTime()
-	var cs core.ChunkStream
+	var cs *core.ChunkStream
 	for {
-		err = pr.conn.Read(&cs)
-		if err != nil {
+		if cs, err = pr.conn.Read(); err != nil {
 			return err
 		}
 

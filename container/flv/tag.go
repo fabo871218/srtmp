@@ -1,7 +1,11 @@
 package flv
 
 import (
+	"bytes"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/fabo871218/srtmp/av"
 	"github.com/fabo871218/srtmp/media/aac"
@@ -18,6 +22,17 @@ type flvTag struct {
 }
 
 /*
+flv 格式
+Header|PreviousTagSize0|Tag1|PreviousTagSize1|Tag2|PreviousTagSize2|...|TagN|PreviousTagSizeN|
+Header
+* Signature(3Byte) 固定为f l v三个字符
+* Version(3Byte) 一般为1
+* Flags(1Byte) 第0位和第2位分别表示video和audio存在的情况(1存在，0不存在)
+* DataOffet(4Byte) 表示flv文件header的长度
+
+Body由一系列的Tag和size组成，tag分为video，audio和script，
+tag格式 tag type|tag data size|timestamp|timestamp extended|stream id|tag data
+
 script tag 存放flv的MetaData信息，比如duration，audiodatarate，creator，width等信息
 
 video tag
@@ -249,18 +264,8 @@ func (tag *Tag) CompositionTime() int32 {
 	return tag.mediat.compositionTime
 }
 
-//ParseMeidaTagHeader parse video, audio, tag header
-func (tag *Tag) ParseMeidaTagHeader(b []byte, isVideo bool) (n int, err error) {
-	switch isVideo {
-	case false:
-		n, err = tag.parseAudioHeader(b)
-	case true:
-		n, err = tag.parseVideoHeader(b)
-	}
-	return
-}
-
-func (tag *Tag) parseAudioHeader(b []byte) (n int, err error) {
+//ParseAudioHeader ...
+func (tag *Tag) ParseAudioHeader(b []byte) (n int, err error) {
 	if len(b) < n+1 {
 		err = fmt.Errorf("invalid audiodata len=%d", len(b))
 		return
@@ -279,7 +284,8 @@ func (tag *Tag) parseAudioHeader(b []byte) (n int, err error) {
 	return
 }
 
-func (tag *Tag) parseVideoHeader(b []byte) (n int, err error) {
+//ParseVideoHeader ...
+func (tag *Tag) ParseVideoHeader(b []byte) (n int, err error) {
 	if len(b) < n+5 {
 		err = fmt.Errorf("invalid videodata len=%d", len(b))
 		return
@@ -336,6 +342,79 @@ func NewAVCSequenceHeader(sps, pps []byte, timeStamp uint32) []byte {
 	copy(buffer[index:], avcConfigRecord)
 	index += len(avcConfigRecord)
 	return buffer[:index]
+}
+
+//ParseAVCSequenceHeader 解析sps和pps
+func ParseAVCSequenceHeader(data []byte) (spss, ppss [][]byte, err error) {
+	reader := bytes.NewReader(data)
+
+	var rb byte
+	if rb, err = reader.ReadByte(); err != nil {
+		err = fmt.Errorf("read version failed, %v", err)
+		return
+	}
+	//校验version，应该为1
+	if rb != 0x01 {
+		err = errors.New("version should be 0x01")
+		return
+	}
+
+	//读取接下来三个字节, 分别为avcProfileIndication, profileCompatility, avcLevelIndication
+	var apa [3]byte
+	if _, err = reader.Read(apa[0:]); err != nil {
+		err = fmt.Errorf("read apa failed, %v", err)
+		return
+	}
+
+	//跳过一个字节
+	if _, err = reader.Seek(1, io.SeekCurrent); err != nil {
+		err = fmt.Errorf("reader.Seek failed, %v", err)
+		return
+	}
+
+	if rb, err = reader.ReadByte(); err != nil {
+		err = fmt.Errorf("read number of sps failed, %v", err)
+		return
+	}
+
+	numberOfsps := int(rb & 0x1f)
+	for i := 0; i < numberOfsps; i++ {
+		var lengthBytes [2]byte
+		if _, err = reader.Read(lengthBytes[0:]); err != nil {
+			err = fmt.Errorf("read sps length failed, %v", err)
+			return
+		}
+		length := binary.BigEndian.Uint16(lengthBytes[0:])
+		sps := make([]byte, length)
+		if _, err = reader.Read(sps[0:]); err != nil {
+			err = fmt.Errorf("read sps failed, %v", err)
+			return
+		}
+		spss = append(spss, sps)
+	}
+
+	//读取pps长度
+	if rb, err = reader.ReadByte(); err != nil {
+		err = fmt.Errorf("read number of sps failed, %v", err)
+		return
+	}
+
+	numberOfpps := int(rb)
+	for i := 0; i < numberOfpps; i++ {
+		var lengthBytes [2]byte
+		if _, err = reader.Read(lengthBytes[0:]); err != nil {
+			err = fmt.Errorf("read sps length failed, %v", err)
+			return
+		}
+		length := binary.BigEndian.Uint16(lengthBytes[0:])
+		pps := make([]byte, length)
+		if _, err = reader.Read(pps[0:]); err != nil {
+			err = fmt.Errorf("read sps failed, %v", err)
+			return
+		}
+		ppss = append(ppss, pps)
+	}
+	return
 }
 
 //NewAACSequenceHeader comment

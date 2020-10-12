@@ -109,6 +109,7 @@ type AudioPacketHeader interface {
 	AACPacketType() uint8
 }
 
+//VideoPacketHeader ...
 type VideoPacketHeader interface {
 	PacketHeader
 	IsKeyFrame() bool

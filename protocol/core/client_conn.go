@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/fabo871218/srtmp/av"
+	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/protocol/amf"
 )
 
@@ -31,24 +32,27 @@ var (
 	cmdPlay          = "play"
 )
 
+//ConnectInfo ...
 type ConnectInfo struct {
 	App            string `amf:"app" json:"app"`
 	Flashver       string `amf:"flashVer" json:"flashVer"`
-	SwfUrl         string `amf:"swfUrl" json:"swfUrl"`
-	TcUrl          string `amf:"tcUrl" json:"tcUrl"`
+	SwfURL         string `amf:"swfUrl" json:"swfUrl"`
+	TcURL          string `amf:"tcUrl" json:"tcUrl"`
 	Fpad           bool   `amf:"fpad" json:"fpad"`
 	AudioCodecs    int    `amf:"audioCodecs" json:"audioCodecs"`
 	VideoCodecs    int    `amf:"videoCodecs" json:"videoCodecs"`
 	VideoFunction  int    `amf:"videoFunction" json:"videoFunction"`
-	PageUrl        string `amf:"pageUrl" json:"pageUrl"`
+	PageURL        string `amf:"pageUrl" json:"pageUrl"`
 	ObjectEncoding int    `amf:"objectEncoding" json:"objectEncoding"`
 }
 
+//ConnectResp ...
 type ConnectResp struct {
 	FMSVer       string `amf:"fmsVer"`
 	Capabilities int    `amf:"capabilities"`
 }
 
+//ConnectEvent ...
 type ConnectEvent struct {
 	Level          string `amf:"level"`
 	Code           string `amf:"code"`
@@ -56,6 +60,7 @@ type ConnectEvent struct {
 	ObjectEncoding int    `amf:"objectEncoding"`
 }
 
+//PublishInfo ...
 type PublishInfo struct {
 	Name string
 	Type string
@@ -73,16 +78,18 @@ type ClientConn struct {
 	decoder       *amf.Decoder
 	encoder       *amf.Encoder
 	bytesw        *bytes.Buffer
+	logger        logger.Logger
 }
 
 //NewClientConn 创建一个与客户端对应的rtmp连接
-func NewClientConn(conn *RtmpConn) *ClientConn {
+func NewClientConn(conn *RtmpConn, log logger.Logger) *ClientConn {
 	return &ClientConn{
 		conn:     conn,
 		streamID: 1,
 		bytesw:   bytes.NewBuffer(nil),
 		decoder:  &amf.Decoder{},
 		encoder:  &amf.Encoder{},
+		logger:   log,
 	}
 }
 
@@ -126,7 +133,7 @@ func (client *ClientConn) connect(vs []interface{}) error {
 				client.ConnInfo.Flashver = flashVer.(string)
 			}
 			if tcurl, ok := obimap["tcUrl"]; ok {
-				client.ConnInfo.TcUrl = tcurl.(string)
+				client.ConnInfo.TcURL = tcurl.(string)
 			}
 			if encoding, ok := obimap["objectEncoding"]; ok {
 				client.ConnInfo.ObjectEncoding = int(encoding.(float64))
@@ -144,6 +151,7 @@ func (client *ClientConn) fcPublish(vs []interface{}) error {
 	return nil
 }
 
+//todo 参数是否要定死
 func (client *ClientConn) connectResp(cur *ChunkStream) error {
 	c := client.conn.NewWindowAckSize(2500000)
 	client.conn.Write(&c)
@@ -296,7 +304,7 @@ func (client *ClientConn) handleCmdMsg(c *ChunkStream) error {
 		case cmdFCUnpublish:
 		case cmdDeleteStream:
 		default:
-			fmt.Printf("no support command=\n", vs[0].(string))
+			client.logger.Warnf("no support command:%s", vs[0].(string))
 		}
 	}
 
@@ -307,9 +315,9 @@ func (client *ClientConn) handleCmdMsg(c *ChunkStream) error {
 //todo 需要增加超时，防止连接一直在却不发送任何消息
 func (client *ClientConn) SetUpPlayOrPublish() error {
 	amfType := amf.AMF0
-	var chunk ChunkStream
 	for {
-		if err := client.conn.Read(&chunk); err != nil {
+		chunk, err := client.conn.Read()
+		if err != nil {
 			return fmt.Errorf("Read chunk stream failed, %v", err)
 		}
 		//todo 需要注释一下， 20，17代表什么消息类型
@@ -331,21 +339,21 @@ func (client *ClientConn) SetUpPlayOrPublish() error {
 				if err = client.connect(vs[1:]); err != nil {
 					return fmt.Errorf("handle connect cmd failed, %v", err)
 				}
-				if err = client.connectResp(&chunk); err != nil {
+				if err = client.connectResp(chunk); err != nil {
 					return fmt.Errorf("connect response failed, %v", err)
 				}
 			case cmdCreateStream:
 				if err = client.createStream(vs[1:]); err != nil {
 					return fmt.Errorf("handle create stream cmd failed, %v", err)
 				}
-				if err = client.createStreamResp(&chunk); err != nil {
+				if err = client.createStreamResp(chunk); err != nil {
 					return fmt.Errorf("create stream response failed, %v", err)
 				}
 			case cmdPublish:
 				if err = client.publishOrPlay(vs[1:]); err != nil {
 					return fmt.Errorf("handle publish command failed, %v", err)
 				}
-				if err = client.publishResp(&chunk); err != nil {
+				if err = client.publishResp(chunk); err != nil {
 					return fmt.Errorf("publish response failed, %v", err)
 				}
 				client.isPublisher = true
@@ -354,7 +362,7 @@ func (client *ClientConn) SetUpPlayOrPublish() error {
 				if err = client.publishOrPlay(vs[1:]); err != nil {
 					return fmt.Errorf("handle play command failed, %v", err)
 				}
-				if err = client.playResp(&chunk); err != nil {
+				if err = client.playResp(chunk); err != nil {
 					return fmt.Errorf("play response failed, %v", err)
 				}
 				client.isPublisher = false
@@ -366,7 +374,7 @@ func (client *ClientConn) SetUpPlayOrPublish() error {
 			case cmdFCUnpublish:
 			case cmdDeleteStream:
 			default:
-				fmt.Printf("no support command:%s\n", cmd)
+				client.logger.Warnf("no support command:%s", cmd)
 			}
 		}
 	}
@@ -374,14 +382,14 @@ func (client *ClientConn) SetUpPlayOrPublish() error {
 
 //ReadMsg is a method
 func (client *ClientConn) ReadMsg() error {
-	var c ChunkStream
 	for {
-		if err := client.conn.Read(&c); err != nil {
+		c, err := client.conn.Read()
+		if err != nil {
 			return err
 		}
 		switch c.TypeID {
 		case 20, 17:
-			if err := client.handleCmdMsg(&c); err != nil {
+			if err := client.handleCmdMsg(c); err != nil {
 				return err
 			}
 		}
@@ -416,15 +424,15 @@ func (client *ClientConn) Flush() error {
 }
 
 //Read ...
-func (client *ClientConn) Read(c *ChunkStream) (err error) {
-	return client.conn.Read(c)
+func (client *ClientConn) Read() (*ChunkStream, error) {
+	return client.conn.Read()
 }
 
 //GetStreamInfo ...
 func (client *ClientConn) GetStreamInfo() (app string, name string, url string) {
 	app = client.ConnInfo.App
 	name = client.PublishInfo.Name
-	url = client.ConnInfo.TcUrl + "/" + client.PublishInfo.Name
+	url = client.ConnInfo.TcURL + "/" + client.PublishInfo.Name
 	return
 }
 

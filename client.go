@@ -1,12 +1,17 @@
 package srtmp
 
 import (
+	"bytes"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"io"
 
 	"github.com/fabo871218/srtmp/av"
 	"github.com/fabo871218/srtmp/container/flv"
 	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/media/h264"
+	"github.com/fabo871218/srtmp/protocol/amf"
 	"github.com/fabo871218/srtmp/protocol/core"
 )
 
@@ -58,9 +63,12 @@ func (c *RtmpClient) OpenPlay(URL string, onPacketReceive func(*av.Packet), onCl
 	return
 }
 
-//Close comment
+//Close 关闭连接，并回调onClosed
 func (c *RtmpClient) Close() error {
 	c.conn.Close()
+	if c.onClosed != nil {
+		c.onClosed()
+	}
 	return nil
 }
 
@@ -135,11 +143,12 @@ func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 	return nil
 }
 
+//发送数据包
 func (c *RtmpClient) sendPacket(pkt *av.Packet) error {
 	var cs core.ChunkStream
 	cs.Data = pkt.Data
 	cs.Length = uint32(len(pkt.Data))
-	cs.StreamID = c.conn.GetStreamId()
+	cs.StreamID = c.conn.GetStreamID()
 	cs.Timestamp = pkt.TimeStamp
 
 	if pkt.IsVideo {
@@ -152,7 +161,7 @@ func (c *RtmpClient) sendPacket(pkt *av.Packet) error {
 		}
 	}
 
-	if err := c.conn.Write(cs); err != nil {
+	if err := c.conn.Write(&cs); err != nil {
 		return err
 	} else if err := c.conn.Flush(); err != nil {
 		return err
@@ -160,24 +169,150 @@ func (c *RtmpClient) sendPacket(pkt *av.Packet) error {
 	return nil
 }
 
-func (c *RtmpClient) streamPlayProc() {
-	defer c.onClosed()
-	var cs core.ChunkStream
+func (c *RtmpClient) handleVideoAudio(cs *core.ChunkStream) (err error) {
+	var pkt av.Packet
+	pkt.Data = cs.Data
+	pkt.StreamID = cs.StreamID
+	pkt.TimeStamp = cs.Timestamp
+	if cs.TypeID == av.TAG_AUDIO {
+		pkt.IsAudio = true
+	} else if cs.TypeID == av.TAG_VIDEO {
+		c.logger.Debugf("Debug.... %s", hex.EncodeToString(cs.Data[:20]))
+		pkt.IsVideo = true
+	}
+	if err = c.demuxer.Demux(&pkt); err != nil {
+		return fmt.Errorf("Demux failed, %v", err)
+	}
+
+	if pkt.IsAudio {
+		//如果是音频数据，直接回调出去
+		c.onPacketReceive(&pkt)
+		return nil
+	}
+	//如果是视频数据，需要区分是不是sequence header，如果是sequence，需要解析出sps和pps信息
+	vh, ok := pkt.Header.(av.VideoPacketHeader)
+	if !ok {
+		return fmt.Errorf("cannot convert from pkt.Header to av.VideoPacketHeader")
+	}
+
+	if vh.CodecID() != av.VIDEO_H264 {
+		return fmt.Errorf("code id:%d do not support", vh.CodecID())
+	}
+	//判断是不是sequence header
+	if vh.IsSeq() {
+		spss, ppss, err := flv.ParseAVCSequenceHeader(pkt.Data)
+		if err != nil {
+			return fmt.Errorf("parse avc sequence header failed, %v", err)
+		}
+		//如果解析到多个sps和pps，只返回第一个sps和pps
+		if len(spss) > 0 {
+			pkt.Data = spss[0]
+			c.onPacketReceive(&pkt)
+		}
+		if len(ppss) > 0 {
+			pkt.Data = ppss[0]
+			c.onPacketReceive(&pkt)
+		}
+		return nil
+	}
+	//解析后的数据格式为 4字节长度+nalue数据+4字节长度+nalu数据。。。
+	//解析出所以的nalu数据
+	index := 0
+	naluData := pkt.Data
 	for {
-		if err := c.conn.Read(&cs); err != nil {
-			fmt.Printf("read chunk stream failed, %v", err)
+		remain := len(naluData[index:])
+		if remain < 4 {
+			if remain != 0 {
+				c.logger.Warnf("Invalid data length, remain:%d", remain)
+			}
+			return nil
+		}
+
+		length := binary.BigEndian.Uint32(naluData[index:])
+		if length > uint32(remain-4) {
+			return fmt.Errorf("invalid data length:%d remain:%d", length, remain-4)
+		}
+		index += 4
+		pkt.Data = naluData[index : index+int(length)]
+		index += int(length)
+		c.onPacketReceive(&pkt)
+	}
+}
+
+func (c *RtmpClient) handleMetadata(cs *core.ChunkStream) (err error) {
+	var values []interface{}
+	r := bytes.NewReader(cs.Data)
+	if cs.TypeID == av.TAG_SCRIPTDATAAMF0 {
+		values, err = c.conn.DecodeBatch(r, amf.AMF0)
+	} else if cs.TypeID == av.TAG_SCRIPTDATAAMF3 {
+		values, err = c.conn.DecodeBatch(r, amf.AMF3)
+	}
+	if err != nil && err != io.EOF {
+		return fmt.Errorf("decode metadata failed, %v", err)
+	}
+
+	for _, v := range values {
+		switch v.(type) {
+		case string:
+			if v.(string) == "onMetadata" {
+				//说明该信息是描述视频信息的元数据，可以从afm.Object中获取到相印的属性值
+			}
+		case amf.Object:
+			for k, v1 := range v.(amf.Object) {
+				c.logger.Debugf("key:%s v:%v", k, v1)
+			}
+		default: //其他的忽略不处理
+		}
+	}
+	return nil
+}
+
+//处理命令消息
+func (c *RtmpClient) handleCommand(cs *core.ChunkStream) (err error) {
+	var values []interface{}
+	r := bytes.NewReader(cs.Data)
+	if cs.TypeID == 20 {
+		values, err = c.conn.DecodeBatch(r, amf.AMF0)
+	} else if cs.TypeID == 17 {
+		values, err = c.conn.DecodeBatch(r, amf.AMF3)
+	}
+	if err != nil && err != io.EOF {
+		return fmt.Errorf("Decode amf failed, %v", err)
+	}
+	for k, v := range values {
+		c.logger.Tracef("k:%d v:%v", k, v)
+	}
+	return nil
+}
+
+func (c *RtmpClient) streamPlayProc() {
+	defer c.Close()
+	for {
+		cs, err := c.conn.Read()
+		if err != nil {
+			c.logger.Errorf("Read chunk stream failed, %s", err.Error())
 			break
 		}
 
-		var pkt av.Packet
-		pkt.IsAudio = cs.TypeID == av.TAG_AUDIO
-		pkt.IsVideo = cs.TypeID == av.TAG_VIDEO
-		pkt.IsMetadata = cs.TypeID == av.TAG_SCRIPTDATAAMF0 || cs.TypeID == av.TAG_SCRIPTDATAAMF3
-		pkt.StreamID = cs.StreamID
-		pkt.Data = cs.Data
-		pkt.TimeStamp = cs.Timestamp
-		c.demuxer.DemuxH(&pkt)
-
-		c.onPacketReceive(&pkt)
+		switch cs.TypeID {
+		case av.TAG_AUDIO, av.TAG_VIDEO:
+			c.logger.Debugf("Receive a media data..... type:%d len:%d", cs.TypeID, len(cs.Data))
+			if err := c.handleVideoAudio(cs); err != nil {
+				c.logger.Errorf("handle media data failed, %v", err)
+			}
+		case av.TAG_SCRIPTDATAAMF0, av.TAG_SCRIPTDATAAMF3:
+			c.logger.Debug("Receive a scriptdata.....")
+			if err := c.handleMetadata(cs); err != nil {
+				c.logger.Errorf("handle metadata failed, %v", err)
+			}
+		case 17, 20:
+			c.logger.Debug("Receive a command message.....")
+			if err := c.handleCommand(cs); err != nil {
+				c.logger.Errorf("handle command failed, %v", err)
+			}
+		default:
+			c.logger.Errorf("Unsupport type id:%d", cs.TypeID)
+			continue
+		}
 	}
 }

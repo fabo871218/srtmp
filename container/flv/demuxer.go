@@ -2,44 +2,54 @@ package flv
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/fabo871218/srtmp/av"
 )
 
-var (
-	ErrAvcEndSEQ = errors.New("avc end sequence")
-)
+//ErrAvcEndSEQ ...
+var ErrAvcEndSEQ = errors.New("avc end sequence")
 
 type Demuxer struct {
 }
 
+//NewDemuxer ...
 func NewDemuxer() *Demuxer {
 	return &Demuxer{}
 }
 
-func (d *Demuxer) DemuxH(p *av.Packet) error {
+//DemuxH ...
+func (d *Demuxer) DemuxH(p *av.Packet) (err error) {
 	var tag Tag
-	_, err := tag.ParseMeidaTagHeader(p.Data, p.IsVideo)
-	if err != nil {
-		return err
+	if p.IsAudio {
+		_, err = tag.ParseAudioHeader(p.Data)
+	} else if p.IsVideo {
+		_, err = tag.ParseVideoHeader(p.Data)
+	} else {
+		//todo IsMetadata如何处理
+		return fmt.Errorf("Unsupport type")
 	}
 	p.Header = &tag
-
-	return nil
+	return
 }
 
-func (d *Demuxer) Demux(p *av.Packet) error {
-	var tag Tag
-	n, err := tag.ParseMeidaTagHeader(p.Data, p.IsVideo)
-	if err != nil {
-		return err
+//Demux ...
+func (d *Demuxer) Demux(p *av.Packet) (err error) {
+	var (
+		tag Tag
+		n   int
+	)
+	if p.IsAudio {
+		n, err = tag.ParseAudioHeader(p.Data)
+	} else if p.IsVideo {
+		n, err = tag.ParseVideoHeader(p.Data)
+	} else {
+		return fmt.Errorf("Unsupport type")
 	}
-	if tag.CodecID() == av.VIDEO_H264 &&
-		p.Data[0] == 0x17 && p.Data[1] == 0x02 {
-		return ErrAvcEndSEQ
+	if err != nil {
+		return
 	}
 	p.Header = &tag
 	p.Data = p.Data[n:]
-
-	return nil
+	return
 }

@@ -17,7 +17,7 @@ var (
 type RtmpRelay struct {
 	PlayUrl              string
 	PublishUrl           string
-	cs_chan              chan core.ChunkStream
+	cs_chan              chan *core.ChunkStream
 	sndctrl_chan         chan string
 	connectPlayClient    *core.ConnClient
 	connectPublishClient *core.ConnClient
@@ -29,7 +29,7 @@ func NewRtmpRelay(playurl *string, publishurl *string) *RtmpRelay {
 	return &RtmpRelay{
 		PlayUrl:              *playurl,
 		PublishUrl:           *publishurl,
-		cs_chan:              make(chan core.ChunkStream, 500),
+		cs_chan:              make(chan *core.ChunkStream, 500),
 		sndctrl_chan:         make(chan string),
 		connectPlayClient:    nil,
 		connectPublishClient: nil,
@@ -40,14 +40,12 @@ func NewRtmpRelay(playurl *string, publishurl *string) *RtmpRelay {
 func (self *RtmpRelay) rcvPlayChunkStream() {
 	fmt.Printf("rcvPlayRtmpMediaPacket connectClient.Read...\n")
 	for {
-		var rc core.ChunkStream
-
 		if self.startflag == false {
 			self.connectPlayClient.Close()
 			fmt.Printf("rcvPlayChunkStream close: playurl=%s, publishurl=%s\n", self.PlayUrl, self.PublishUrl)
 			break
 		}
-		err := self.connectPlayClient.Read(&rc)
+		rc, err := self.connectPlayClient.Read()
 
 		if err != nil && err == io.EOF {
 			break

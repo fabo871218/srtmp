@@ -18,6 +18,7 @@ const (
 	idSetPeerBandwidth
 )
 
+//RtmpConn ...
 type RtmpConn struct {
 	net.Conn
 	chunkSize           uint32
@@ -28,9 +29,10 @@ type RtmpConn struct {
 	ackReceived         uint32
 	rw                  *ReadWriter
 	pool                *utils.Pool
-	chunks              map[uint32]ChunkStream
+	chunks              map[uint32]*ChunkStream
 }
 
+//NewConn ...
 func NewConn(c net.Conn, bufferSize int) *RtmpConn {
 	return &RtmpConn{
 		Conn:                c,
@@ -40,38 +42,64 @@ func NewConn(c net.Conn, bufferSize int) *RtmpConn {
 		remoteWindowAckSize: 2500000,
 		pool:                utils.NewPool(),
 		rw:                  NewReadWriter(c, bufferSize),
-		chunks:              make(map[uint32]ChunkStream),
+		chunks:              make(map[uint32]*ChunkStream),
 	}
 }
 
-func (rtmpConn *RtmpConn) Read(c *ChunkStream) error {
+func (rtmpConn *RtmpConn) Read() (c *ChunkStream, err error) {
+	var rb byte
 	for {
-		h, _ := rtmpConn.rw.ReadUintBE(1) //读取第一个字节
-		format := h >> 6                  //获取fmt
-		csid := h & 0x3f                  //获取csid
-		cs, ok := rtmpConn.chunks[csid]   //判断csid todo 这里有问题，csid可能会有多个字节
-		if !ok {
-			//如果没找到，就创建一个新的chunkstream
-			cs = ChunkStream{}
+		//读取第一个字节
+		if rb, err = rtmpConn.rw.ReadByte(); err != nil {
+			return nil, err
+		}
+		format := uint32(rb >> 6) //获取fmt，前面两位是fmt
+		csid := uint32(rb & 0x3f) //获取csid，先获取后面6位的csid
+		switch csid {
+		case 0: //csid有2个字节，需要再读取一个字节
+			if rb, err = rtmpConn.rw.ReadByte(); err != nil {
+				return nil, err
+			}
+			csid = uint32(rb) + 64 //从64开始计算
+		case 1:
+			if csid, err = rtmpConn.rw.ReadUintLE(2); err != nil {
+				return nil, err
+			}
+			csid += 64 //从64开始计算
+		case 2: //表示该chunk是控制信息和命令信息，相当于控制消息的csid就是2
+		default: //该6位就是一个csid， 不用处理
+		}
+
+		cs, ok := rtmpConn.chunks[csid]
+		if !ok { //如果没找到，就创建一个新的chunkstream
+			cs = &ChunkStream{
+				CSID: csid,
+			}
 			rtmpConn.chunks[csid] = cs
 		}
 		cs.tmpFromat = format
-		cs.CSID = csid
-		err := cs.readChunk(rtmpConn.rw, rtmpConn.remoteChunkSize, rtmpConn.pool)
-		if err != nil {
-			return err
+		if err = cs.readChunk(rtmpConn.rw, rtmpConn.remoteChunkSize); err != nil {
+			return nil, err
 		}
-		rtmpConn.chunks[csid] = cs
 		//判断当前chunk是否读取完成
-		if cs.full() {
-			*c = cs
-			break
+		if cs.isComplete() {
+			c = &ChunkStream{
+				Format:    cs.Format,
+				CSID:      cs.CSID,
+				Timestamp: cs.Timestamp,
+				Length:    cs.Length,
+				TypeID:    cs.TypeID,
+				StreamID:  cs.StreamID,
+				Data:      cs.Data[0:cs.Length],
+			}
+			//如果是控制消息，就直接处理掉，不反回到外层
+			isHandled := rtmpConn.handleControlMsg(cs)
+			rtmpConn.ack(cs.Length)
+			if !isHandled {
+				return
+			}
 		}
 	}
-
-	rtmpConn.handleControlMsg(c)
-	rtmpConn.ack(c.Length)
-	return nil
 }
 
 func (rtmpConn *RtmpConn) Write(c *ChunkStream) error {
@@ -81,50 +109,68 @@ func (rtmpConn *RtmpConn) Write(c *ChunkStream) error {
 	return c.writeChunk(rtmpConn.rw, int(rtmpConn.chunkSize))
 }
 
+//Flush ...
 func (rtmpConn *RtmpConn) Flush() error {
 	return rtmpConn.rw.Flush()
 }
 
+//Close ...
 func (rtmpConn *RtmpConn) Close() error {
 	return rtmpConn.Conn.Close()
 }
 
+//RemoteAddr ...
 func (rtmpConn *RtmpConn) RemoteAddr() net.Addr {
 	return rtmpConn.Conn.RemoteAddr()
 }
 
+//LocalAddr ...
 func (rtmpConn *RtmpConn) LocalAddr() net.Addr {
 	return rtmpConn.Conn.LocalAddr()
 }
 
+//SetDeadline ...
 func (rtmpConn *RtmpConn) SetDeadline(t time.Time) error {
 	return rtmpConn.Conn.SetDeadline(t)
 }
 
+//NewAck ...
 func (rtmpConn *RtmpConn) NewAck(size uint32) ChunkStream {
 	return initControlMsg(idAck, 4, size)
 }
 
+//NewSetChunkSize ...
 func (rtmpConn *RtmpConn) NewSetChunkSize(size uint32) ChunkStream {
 	return initControlMsg(idSetChunkSize, 4, size)
 }
 
+//NewWindowAckSize ...
 func (rtmpConn *RtmpConn) NewWindowAckSize(size uint32) ChunkStream {
 	return initControlMsg(idWindowAckSize, 4, size)
 }
 
+//NewSetPeerBandwidth ...
 func (rtmpConn *RtmpConn) NewSetPeerBandwidth(size uint32) ChunkStream {
 	ret := initControlMsg(idSetPeerBandwidth, 5, size)
 	ret.Data[4] = 2
 	return ret
 }
 
-func (rtmpConn *RtmpConn) handleControlMsg(c *ChunkStream) {
-	if c.TypeID == idSetChunkSize {
+//handleControlMsg 处理协议层消息
+func (rtmpConn *RtmpConn) handleControlMsg(c *ChunkStream) bool {
+	switch c.TypeID {
+	case idSetChunkSize:
 		rtmpConn.remoteChunkSize = binary.BigEndian.Uint32(c.Data)
-	} else if c.TypeID == idWindowAckSize {
+	case idAbortMessage:
+	case idAck:
+	case idUserControlMessages:
+	case idWindowAckSize:
 		rtmpConn.remoteWindowAckSize = binary.BigEndian.Uint32(c.Data)
+	case idSetPeerBandwidth:
+	default:
+		return false
 	}
+	return true
 }
 
 func (rtmpConn *RtmpConn) ack(size uint32) {
@@ -185,6 +231,7 @@ func (rtmpConn *RtmpConn) userControlMsg(eventType, buflen uint32) ChunkStream {
 	return ret
 }
 
+//SetBegin ...
 func (rtmpConn *RtmpConn) SetBegin() {
 	ret := rtmpConn.userControlMsg(streamBegin, 4)
 	for i := 0; i < 4; i++ {
@@ -193,6 +240,7 @@ func (rtmpConn *RtmpConn) SetBegin() {
 	rtmpConn.Write(&ret)
 }
 
+//SetRecorded ...
 func (rtmpConn *RtmpConn) SetRecorded() {
 	ret := rtmpConn.userControlMsg(streamIsRecorded, 4)
 	for i := 0; i < 4; i++ {

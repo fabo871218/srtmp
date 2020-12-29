@@ -5,14 +5,16 @@ import (
 	"io/ioutil"
 	"time"
 
+	"github.com/fabo871218/srtmp"
 	"github.com/fabo871218/srtmp/av"
-	"github.com/fabo871218/srtmp/protocol"
 )
 
 var startCode []byte = []byte{0x00, 0x00, 0x00, 0x01}
 
 func main() {
-	client := protocol.NewRtmpClient()
+	api := srtmp.NewAPI()
+	client := api.NewRtmpClient()
+
 	if err := client.OpenPublish("rtmp://127.0.0.1:1935/srtmp/livego"); err != nil {
 		panic(err)
 	}

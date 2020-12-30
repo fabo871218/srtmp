@@ -2,6 +2,7 @@ package parser
 
 import (
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/fabo871218/srtmp/av"
@@ -35,9 +36,8 @@ func (codeParser *CodecParser) SampleRate() (int, error) {
 }
 
 func (codeParser *CodecParser) Parse(p *av.Packet, w io.Writer) (err error) {
-
-	switch p.IsVideo {
-	case true:
+	switch p.PacketType {
+	case av.PacketTypeVideo:
 		f, ok := p.Header.(av.VideoPacketHeader)
 		if ok {
 			if f.CodecID() == av.VIDEO_H264 {
@@ -47,7 +47,7 @@ func (codeParser *CodecParser) Parse(p *av.Packet, w io.Writer) (err error) {
 				err = codeParser.h264.Parse(p.Data, f.IsSeq(), w)
 			}
 		}
-	case false:
+	case av.PacketTypeAudio:
 		f, ok := p.Header.(av.AudioPacketHeader)
 		if ok {
 			switch f.SoundFormat() {
@@ -63,7 +63,8 @@ func (codeParser *CodecParser) Parse(p *av.Packet, w io.Writer) (err error) {
 				err = codeParser.mp3.Parse(p.Data)
 			}
 		}
-
+	default:
+		err = fmt.Errorf("Unknow packet type:%d", p.PacketType)
 	}
 	return
 }

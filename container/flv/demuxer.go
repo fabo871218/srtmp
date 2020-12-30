@@ -21,11 +21,12 @@ func NewDemuxer() *Demuxer {
 //DemuxH ...
 func (d *Demuxer) DemuxH(p *av.Packet) (err error) {
 	var tag Tag
-	if p.IsAudio {
+	switch p.PacketType {
+	case av.PacketTypeAudio:
 		_, err = tag.ParseAudioHeader(p.Data)
-	} else if p.IsVideo {
+	case av.PacketTypeVideo:
 		_, err = tag.ParseVideoHeader(p.Data)
-	} else {
+	default:
 		//todo IsMetadata如何处理
 		return fmt.Errorf("Unsupport type")
 	}
@@ -39,12 +40,13 @@ func (d *Demuxer) Demux(p *av.Packet) (err error) {
 		tag Tag
 		n   int
 	)
-	if p.IsAudio {
+	switch p.PacketType {
+	case av.PacketTypeAudio:
 		n, err = tag.ParseAudioHeader(p.Data)
-	} else if p.IsVideo {
+	case av.PacketTypeVideo:
 		n, err = tag.ParseVideoHeader(p.Data)
-	} else {
-		return fmt.Errorf("Unsupport type")
+	default:
+		return fmt.Errorf("Unsupport type:%d", p.PacketType)
 	}
 	if err != nil {
 		return

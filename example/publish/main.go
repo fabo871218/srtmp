@@ -45,9 +45,9 @@ func main() {
 
 				bcheck = true
 				pkt := &av.Packet{
-					IsVideo:   true,
-					TimeStamp: uint32(timeStamp),
-					Data:      make([]byte, index-pre),
+					PacketType: av.PacketTypeVideo,
+					TimeStamp:  uint32(timeStamp),
+					Data:       make([]byte, index-pre),
 				}
 				copy(pkt.Data, data[pre:index])
 				if err := client.SendPacket(pkt); err != nil {

@@ -75,16 +75,17 @@ func (writer *FLVWriter) Write(p *av.Packet) error {
 	writer.RWBaser.SetPreTime()
 	h := writer.buf[:headerLen]
 	typeID := av.TAG_VIDEO
-	if !p.IsVideo {
-		if p.IsMetadata {
-			var err error
-			typeID = av.TAG_SCRIPTDATAAMF0
-			p.Data, err = amf.MetaDataReform(p.Data, amf.DEL)
-			if err != nil {
-				return err
-			}
-		} else {
-			typeID = av.TAG_AUDIO
+	switch p.PacketType {
+	case av.PacketTypeVideo:
+		typeID = av.TAG_VIDEO
+	case av.PacketTypeAudio:
+		typeID = av.TAG_AUDIO
+	case av.PacketTypeMetadata:
+		var err error
+		typeID = av.TAG_SCRIPTDATAAMF0
+		p.Data, err = amf.MetaDataReform(p.Data, amf.DEL)
+		if err != nil {
+			return err
 		}
 	}
 	dataLen := len(p.Data)

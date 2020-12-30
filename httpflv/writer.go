@@ -57,7 +57,12 @@ func (flvWriter *FLVWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.Str
 	fmt.Printf("[%v] packet queue max!!!\n", streamInfo)
 	for i := 0; i < maxQueueNum-84; i++ {
 		tmpPkt, ok := <-pktQue
-		if ok && tmpPkt.IsVideo {
+		if !ok {
+			continue
+		}
+
+		switch tmpPkt.PacketType {
+		case av.PacketTypeVideo:
 			videoPkt, ok := tmpPkt.Header.(av.VideoPacketHeader)
 			// dont't drop sps config and dont't drop key frame
 			if ok && (videoPkt.IsSeq() || videoPkt.IsKeyFrame()) {
@@ -70,11 +75,10 @@ func (flvWriter *FLVWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.Str
 			}
 			// drop other packet
 			<-pktQue
-		}
-		// try to don't drop audio
-		if ok && tmpPkt.IsAudio {
+		case av.PacketTypeAudio:
 			fmt.Println("insert audio to queue")
 			pktQue <- tmpPkt
+		default:
 		}
 	}
 	fmt.Printf("packet queue len: %d\n", len(pktQue))
@@ -108,16 +112,17 @@ func (flvWriter *FLVWriter) SendPacket() error {
 			flvWriter.RWBaser.SetPreTime()
 			h := flvWriter.buf[:headerLen]
 			typeID := av.TAG_VIDEO
-			if !p.IsVideo {
-				if p.IsMetadata {
-					var err error
-					typeID = av.TAG_SCRIPTDATAAMF0
-					p.Data, err = amf.MetaDataReform(p.Data, amf.DEL)
-					if err != nil {
-						return err
-					}
-				} else {
-					typeID = av.TAG_AUDIO
+			switch p.PacketType {
+			case av.PacketTypeVideo:
+				typeID = av.TAG_VIDEO
+			case av.PacketTypeAudio:
+				typeID = av.TAG_AUDIO
+			case av.PacketTypeMetadata:
+				var err error
+				typeID = av.TAG_SCRIPTDATAAMF0
+				p.Data, err = amf.MetaDataReform(p.Data, amf.DEL)
+				if err != nil {
+					return err
 				}
 			}
 			dataLen := len(p.Data)

@@ -144,16 +144,15 @@ func (self *StaticPush) sendPacket(p *av.Packet) {
 
 	//glog.Infof("Static sendPacket: rtmpurl=%s, length=%d, streamid=%d",
 	//	self.RtmpUrl, len(p.Data), cs.StreamID)
-	if p.IsVideo {
+	switch p.PacketType {
+	case av.PacketTypeVideo:
 		cs.TypeID = av.TAG_VIDEO
-	} else {
-		if p.IsMetadata {
-			cs.TypeID = av.TAG_SCRIPTDATAAMF0
-		} else {
-			cs.TypeID = av.TAG_AUDIO
-		}
+	case av.PacketTypeAudio:
+		cs.TypeID = av.TAG_AUDIO
+	case av.PacketTypeMetadata:
+		cs.TypeID = av.TAG_SCRIPTDATAAMF0
+	default:
 	}
-
 	self.connectClient.Write(&cs)
 }
 

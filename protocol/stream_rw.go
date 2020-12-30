@@ -115,18 +115,12 @@ func (sw *StreamWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.StreamI
 	sw.logger.Debugf("[%v] packet queue max!!!", streamInfo)
 	for i := 0; i < maxQueueNum-84; i++ {
 		tmpPkt, ok := <-pktQue
-		// try to don't drop audio
-		if ok && tmpPkt.IsAudio {
-			if len(pktQue) > maxQueueNum-2 {
-				sw.logger.Warn("Drop audio pkt")
-				<-pktQue
-			} else {
-				pktQue <- tmpPkt
-			}
-
+		if !ok {
+			continue
 		}
 
-		if ok && tmpPkt.IsVideo {
+		switch tmpPkt.PacketType {
+		case av.PacketTypeVideo:
 			videoPkt, ok := tmpPkt.Header.(av.VideoPacketHeader)
 			// dont't drop sps config and dont't drop key frame
 			if ok && (videoPkt.IsSeq() || videoPkt.IsKeyFrame()) {
@@ -136,6 +130,14 @@ func (sw *StreamWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.StreamI
 				sw.logger.Warn("Drop video pkt")
 				<-pktQue
 			}
+		case av.PacketTypeAudio:
+			if len(pktQue) > maxQueueNum-2 {
+				sw.logger.Warn("Drop audio pkt")
+				<-pktQue
+			} else {
+				pktQue <- tmpPkt
+			}
+		default:
 		}
 	}
 	sw.logger.Debugf("Packet queue len: %d", len(pktQue))
@@ -175,17 +177,17 @@ func (sw *StreamWriter) SendPacket() error {
 			cs.Timestamp = p.TimeStamp
 			cs.Timestamp += sw.BaseTimeStamp()
 
-			if p.IsVideo {
+			isVideo := false
+			switch p.PacketType {
+			case av.PacketTypeVideo:
 				cs.TypeID = av.TAG_VIDEO
-			} else {
-				if p.IsMetadata {
-					cs.TypeID = av.TAG_SCRIPTDATAAMF0
-				} else {
-					cs.TypeID = av.TAG_AUDIO
-				}
+				isVideo = true
+			case av.PacketTypeAudio:
+				cs.TypeID = av.TAG_AUDIO
+			case av.PacketTypeMetadata:
+				cs.TypeID = av.TAG_SCRIPTDATAAMF0
 			}
-
-			sw.SaveStatics(p.StreamID, uint64(cs.Length), p.IsVideo)
+			sw.SaveStatics(p.StreamID, uint64(cs.Length), isVideo)
 			sw.SetPreTime()
 			sw.RecTimeStamp(cs.Timestamp, cs.TypeID)
 			err := sw.conn.Write(cs)
@@ -293,14 +295,21 @@ func (pr *StreamReader) Read(p *av.Packet) (err error) {
 		}
 	}
 
-	p.IsAudio = cs.TypeID == av.TAG_AUDIO
-	p.IsVideo = cs.TypeID == av.TAG_VIDEO
-	p.IsMetadata = cs.TypeID == av.TAG_SCRIPTDATAAMF0 || cs.TypeID == av.TAG_SCRIPTDATAAMF3
+	isVideo := false
+	switch cs.TypeID {
+	case av.TAG_VIDEO:
+		p.PacketType = av.PacketTypeVideo
+		isVideo = true
+	case av.TAG_AUDIO:
+		p.PacketType = av.PacketTypeAudio
+	case av.TAG_SCRIPTDATAAMF0, av.TAG_SCRIPTDATAAMF3:
+		p.PacketType = av.PacketTypeMetadata
+	}
 	p.StreamID = cs.StreamID
 	p.Data = cs.Data
 	p.TimeStamp = cs.Timestamp
 
-	pr.SaveStatics(p.StreamID, uint64(len(p.Data)), p.IsVideo)
+	pr.SaveStatics(p.StreamID, uint64(len(p.Data)), isVideo)
 	pr.demuxer.DemuxH(p)
 	return err
 }

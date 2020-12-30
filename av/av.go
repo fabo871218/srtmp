@@ -72,6 +72,14 @@ const (
 	VIDEO_H264 = 7
 )
 
+// Packet类型
+const (
+	PacketTypeUnknow   = 0
+	PacketTypeVideo    = 1 //音频包
+	PacketTypeAudio    = 2 //视频包
+	PacketTypeMetadata = 3 //数据包
+)
+
 var (
 	PUBLISH = "publish"
 	PLAY    = "play"
@@ -79,9 +87,7 @@ var (
 
 // Header can be converted to AudioHeaderInfo or VideoHeaderInfo
 type Packet struct {
-	IsAudio    bool
-	IsVideo    bool
-	IsMetadata bool
+	PacketType uint32
 	TimeStamp  uint32 // dts
 	StreamID   uint32
 	Header     PacketHeader

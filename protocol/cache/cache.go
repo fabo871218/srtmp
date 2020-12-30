@@ -27,34 +27,30 @@ func NewCache() *Cache {
 }
 
 func (cache *Cache) Write(p av.Packet) {
-	if p.IsMetadata {
-		cache.metadata.Write(&p)
-		return
-	} else {
-		if !p.IsVideo {
-			ah, ok := p.Header.(av.AudioPacketHeader)
-			if ok {
-				if ah.SoundFormat() == av.SOUND_AAC &&
-					ah.AACPacketType() == av.AAC_SEQHDR {
-					cache.audioSeq.Write(&p)
-					return
-				} else {
-					return
-				}
-			}
-
-		} else {
-			vh, ok := p.Header.(av.VideoPacketHeader)
-			if ok {
-				if vh.IsSeq() {
-					cache.videoSeq.Write(&p)
-					return
-				}
+	switch p.PacketType {
+	case av.PacketTypeVideo:
+		ah, ok := p.Header.(av.AudioPacketHeader)
+		if ok {
+			if ah.SoundFormat() == av.SOUND_AAC &&
+				ah.AACPacketType() == av.AAC_SEQHDR {
+				cache.audioSeq.Write(&p)
+				return
 			} else {
 				return
 			}
-
 		}
+	case av.PacketTypeAudio:
+		vh, ok := p.Header.(av.VideoPacketHeader)
+		if ok {
+			if vh.IsSeq() {
+				cache.videoSeq.Write(&p)
+				return
+			}
+		} else {
+			return
+		}
+	case av.PacketTypeMetadata:
+		cache.metadata.Write(&p)
 	}
 	cache.gop.Write(&p)
 }

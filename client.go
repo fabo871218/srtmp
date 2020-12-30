@@ -78,7 +78,34 @@ func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 		return fmt.Errorf("It is not publish mode")
 	}
 
-	if pkt.IsVideo {
+	switch pkt.PacketType {
+	case av.PacketTypeAudio:
+		ah, ok := pkt.Header.(av.AudioPacketHeader)
+		if ok == false {
+			return fmt.Errorf("audio pkt.Header should be av.AudioPacketHeader")
+		}
+		if c.audioFirst {
+			if ah.SoundFormat() == av.SOUND_AAC {
+				//如果音频是aac，需要先发送aac sequence header
+				sequencePkt := &av.Packet{
+					PacketType: av.PacketTypeAudio,
+					Data:       flv.NewAACSequenceHeader(ah),
+					TimeStamp:  pkt.TimeStamp,
+				}
+
+				if err := c.sendPacket(sequencePkt); err != nil {
+					return fmt.Errorf("send aac sequence header failed. %v", err)
+				}
+			}
+
+			c.audioFirst = false
+		}
+
+		pkt.Data = flv.NewAACData(ah, pkt.Data, pkt.TimeStamp)
+		if err := c.sendPacket(pkt); err != nil {
+			return fmt.Errorf("send packet failed, %v", err)
+		}
+	case av.PacketTypeVideo:
 		if c.videoFirst {
 			var sps, pps []byte
 			nalus := h264.ParseNalus(pkt.Data)
@@ -96,9 +123,9 @@ func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 			}
 			//send flv sequence header
 			sequencePkt := &av.Packet{
-				IsVideo:   true,
-				Data:      flv.NewAVCSequenceHeader(sps, pps, pkt.TimeStamp),
-				TimeStamp: pkt.TimeStamp,
+				PacketType: av.PacketTypeVideo,
+				Data:       flv.NewAVCSequenceHeader(sps, pps, pkt.TimeStamp),
+				TimeStamp:  pkt.TimeStamp,
 			}
 
 			if err := c.sendPacket(sequencePkt); err != nil {
@@ -111,33 +138,7 @@ func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 		if err := c.sendPacket(pkt); err != nil {
 			return fmt.Errorf("send packet failed, %v", err)
 		}
-	} else if pkt.IsAudio {
-		ah, ok := pkt.Header.(av.AudioPacketHeader)
-		if ok == false {
-			return fmt.Errorf("audio pkt.Header should be av.AudioPacketHeader")
-		}
-		if c.audioFirst {
-			if ah.SoundFormat() == av.SOUND_AAC {
-				//如果音频是aac，需要先发送aac sequence header
-				sequencePkt := &av.Packet{
-					IsAudio:   true,
-					Data:      flv.NewAACSequenceHeader(ah),
-					TimeStamp: pkt.TimeStamp,
-				}
-
-				if err := c.sendPacket(sequencePkt); err != nil {
-					return fmt.Errorf("send aac sequence header failed. %v", err)
-				}
-			}
-
-			c.audioFirst = false
-		}
-
-		pkt.Data = flv.NewAACData(ah, pkt.Data, pkt.TimeStamp)
-		if err := c.sendPacket(pkt); err != nil {
-			return fmt.Errorf("send packet failed, %v", err)
-		}
-	} else {
+	default:
 		return fmt.Errorf("packet type is not video and audio")
 	}
 	return nil
@@ -151,14 +152,13 @@ func (c *RtmpClient) sendPacket(pkt *av.Packet) error {
 	cs.StreamID = c.conn.GetStreamID()
 	cs.Timestamp = pkt.TimeStamp
 
-	if pkt.IsVideo {
+	switch pkt.PacketType {
+	case av.PacketTypeVideo:
 		cs.TypeID = av.TAG_VIDEO
-	} else {
-		if pkt.IsMetadata {
-			cs.TypeID = av.TAG_SCRIPTDATAAMF0
-		} else {
-			cs.TypeID = av.TAG_AUDIO
-		}
+	case av.PacketTypeAudio:
+		cs.TypeID = av.TAG_AUDIO
+	case av.PacketTypeMetadata:
+		cs.TypeID = av.TAG_SCRIPTDATAAMF0
 	}
 
 	if err := c.conn.Write(&cs); err != nil {
@@ -175,16 +175,16 @@ func (c *RtmpClient) handleVideoAudio(cs *core.ChunkStream) (err error) {
 	pkt.StreamID = cs.StreamID
 	pkt.TimeStamp = cs.Timestamp
 	if cs.TypeID == av.TAG_AUDIO {
-		pkt.IsAudio = true
+		pkt.PacketType = av.PacketTypeAudio
 	} else if cs.TypeID == av.TAG_VIDEO {
 		c.logger.Debugf("Debug.... %s", hex.EncodeToString(cs.Data[:20]))
-		pkt.IsVideo = true
+		pkt.PacketType = av.PacketTypeVideo
 	}
 	if err = c.demuxer.Demux(&pkt); err != nil {
 		return fmt.Errorf("Demux failed, %v", err)
 	}
 
-	if pkt.IsAudio {
+	if pkt.PacketType == av.PacketTypeAudio {
 		//如果是音频数据，直接回调出去
 		c.onPacketReceive(&pkt)
 		return nil

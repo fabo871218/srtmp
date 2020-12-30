@@ -21,7 +21,8 @@ func main() {
 
 	rtmpURL := "rtmp://58.200.131.2:1935/livetv/dftv"
 	err = client.OpenPlay(rtmpURL, func(pkt *av.Packet) {
-		if pkt.IsVideo {
+		switch pkt.PacketType {
+		case av.PacketTypeVideo:
 			naluType := pkt.Data[0] & 0x1F
 			switch naluType {
 			case 7, 8, 1, 5:
@@ -30,8 +31,11 @@ func main() {
 			default:
 				//忽略
 			}
-		} else if pkt.IsAudio {
+		case av.PacketTypeAudio:
 			//fmt.Printf("audio pkt, len:%d", len(pkt.Data))
+		case av.PacketTypeMetadata:
+			// todo
+		default:
 		}
 		//fmt.Println(len(pkt.Data))
 	}, func() {

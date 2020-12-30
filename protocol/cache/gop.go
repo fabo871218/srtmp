@@ -86,7 +86,7 @@ func (gopCache *GopCache) writeToArray(chunk *av.Packet, startNew bool) error {
 
 func (gopCache *GopCache) Write(p *av.Packet) {
 	var ok bool
-	if p.IsVideo {
+	if p.PacketType == av.PacketTypeVideo {
 		vh := p.Header.(av.VideoPacketHeader)
 		if vh.IsKeyFrame() && !vh.IsSeq() {
 			ok = true

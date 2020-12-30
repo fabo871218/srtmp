@@ -66,8 +66,8 @@ type PublishInfo struct {
 	Type string
 }
 
-//ClientConn 与客户端对应的rtmp连接
-type ClientConn struct {
+//ForwardConnect 与客户端对应的rtmp连接
+type ForwardConnect struct {
 	done          bool
 	streamID      int
 	isPublisher   bool
@@ -81,9 +81,9 @@ type ClientConn struct {
 	logger        logger.Logger
 }
 
-//NewClientConn 创建一个与客户端对应的rtmp连接
-func NewClientConn(conn *RtmpConn, log logger.Logger) *ClientConn {
-	return &ClientConn{
+//NewForwardConnect 创建一个与客户端对应的rtmp连接
+func NewForwardConnect(conn *RtmpConn, log logger.Logger) *ForwardConnect {
+	return &ForwardConnect{
 		conn:     conn,
 		streamID: 1,
 		bytesw:   bytes.NewBuffer(nil),
@@ -93,14 +93,14 @@ func NewClientConn(conn *RtmpConn, log logger.Logger) *ClientConn {
 	}
 }
 
-func (client *ClientConn) writeMsg(csid, streamID uint32, args ...interface{}) error {
-	client.bytesw.Reset()
+func (fc *ForwardConnect) writeMsg(csid, streamID uint32, args ...interface{}) error {
+	fc.bytesw.Reset()
 	for _, v := range args {
-		if _, err := client.encoder.Encode(client.bytesw, v, amf.AMF0); err != nil {
+		if _, err := fc.encoder.Encode(fc.bytesw, v, amf.AMF0); err != nil {
 			return err
 		}
 	}
-	msg := client.bytesw.Bytes()
+	msg := fc.bytesw.Bytes()
 	c := ChunkStream{
 		Format:    0,
 		CSID:      csid,
@@ -110,11 +110,11 @@ func (client *ClientConn) writeMsg(csid, streamID uint32, args ...interface{}) e
 		Length:    uint32(len(msg)),
 		Data:      msg,
 	}
-	client.conn.Write(&c)
-	return client.conn.Flush()
+	fc.conn.Write(&c)
+	return fc.conn.Flush()
 }
 
-func (client *ClientConn) connect(vs []interface{}) error {
+func (fc *ForwardConnect) connect(vs []interface{}) error {
 	for _, v := range vs {
 		switch v.(type) {
 		case string:
@@ -123,42 +123,42 @@ func (client *ClientConn) connect(vs []interface{}) error {
 			if id != 1 {
 				return ErrReq
 			}
-			client.transactionID = id
+			fc.transactionID = id
 		case amf.Object:
 			obimap := v.(amf.Object)
 			if app, ok := obimap["app"]; ok {
-				client.ConnInfo.App = app.(string)
+				fc.ConnInfo.App = app.(string)
 			}
 			if flashVer, ok := obimap["flashVer"]; ok {
-				client.ConnInfo.Flashver = flashVer.(string)
+				fc.ConnInfo.Flashver = flashVer.(string)
 			}
 			if tcurl, ok := obimap["tcUrl"]; ok {
-				client.ConnInfo.TcURL = tcurl.(string)
+				fc.ConnInfo.TcURL = tcurl.(string)
 			}
 			if encoding, ok := obimap["objectEncoding"]; ok {
-				client.ConnInfo.ObjectEncoding = int(encoding.(float64))
+				fc.ConnInfo.ObjectEncoding = int(encoding.(float64))
 			}
 		}
 	}
 	return nil
 }
 
-func (client *ClientConn) releaseStream(vs []interface{}) error {
+func (fc *ForwardConnect) releaseStream(vs []interface{}) error {
 	return nil
 }
 
-func (client *ClientConn) fcPublish(vs []interface{}) error {
+func (fc *ForwardConnect) fcPublish(vs []interface{}) error {
 	return nil
 }
 
 //todo 参数是否要定死
-func (client *ClientConn) connectResp(cur *ChunkStream) error {
-	c := client.conn.NewWindowAckSize(2500000)
-	client.conn.Write(&c)
-	c = client.conn.NewSetPeerBandwidth(2500000)
-	client.conn.Write(&c)
-	c = client.conn.NewSetChunkSize(uint32(1024))
-	client.conn.Write(&c)
+func (fc *ForwardConnect) connectResp(cur *ChunkStream) error {
+	c := fc.conn.NewWindowAckSize(2500000)
+	fc.conn.Write(&c)
+	c = fc.conn.NewSetPeerBandwidth(2500000)
+	fc.conn.Write(&c)
+	c = fc.conn.NewSetChunkSize(uint32(1024))
+	fc.conn.Write(&c)
 
 	resp := make(amf.Object)
 	resp["fmsVer"] = "FMS/3,0,1,123"
@@ -168,38 +168,38 @@ func (client *ClientConn) connectResp(cur *ChunkStream) error {
 	event["level"] = "status"
 	event["code"] = "NetConnection.Connect.Success"
 	event["description"] = "Connection succeeded."
-	event["objectEncoding"] = client.ConnInfo.ObjectEncoding
-	return client.writeMsg(cur.CSID, cur.StreamID, "_result", client.transactionID, resp, event)
+	event["objectEncoding"] = fc.ConnInfo.ObjectEncoding
+	return fc.writeMsg(cur.CSID, cur.StreamID, "_result", fc.transactionID, resp, event)
 }
 
-func (client *ClientConn) createStream(vs []interface{}) error {
+func (fc *ForwardConnect) createStream(vs []interface{}) error {
 	for _, v := range vs {
 		switch v.(type) {
 		case string:
 		case float64:
-			client.transactionID = int(v.(float64))
+			fc.transactionID = int(v.(float64))
 		case amf.Object:
 		}
 	}
 	return nil
 }
 
-func (client *ClientConn) createStreamResp(cur *ChunkStream) error {
-	return client.writeMsg(cur.CSID, cur.StreamID, "_result", client.transactionID, nil, client.streamID)
+func (fc *ForwardConnect) createStreamResp(cur *ChunkStream) error {
+	return fc.writeMsg(cur.CSID, cur.StreamID, "_result", fc.transactionID, nil, fc.streamID)
 }
 
-func (client *ClientConn) publishOrPlay(vs []interface{}) error {
+func (fc *ForwardConnect) publishOrPlay(vs []interface{}) error {
 	for k, v := range vs {
 		switch v.(type) {
 		case string:
 			if k == 2 {
-				client.PublishInfo.Name = v.(string)
+				fc.PublishInfo.Name = v.(string)
 			} else if k == 3 {
-				client.PublishInfo.Type = v.(string)
+				fc.PublishInfo.Type = v.(string)
 			}
 		case float64:
 			id := int(v.(float64))
-			client.transactionID = id
+			fc.transactionID = id
 		case amf.Object:
 		}
 	}
@@ -207,56 +207,56 @@ func (client *ClientConn) publishOrPlay(vs []interface{}) error {
 	return nil
 }
 
-func (client *ClientConn) publishResp(cur *ChunkStream) error {
+func (fc *ForwardConnect) publishResp(cur *ChunkStream) error {
 	event := make(amf.Object)
 	event["level"] = "status"
 	event["code"] = "NetStream.Publish.Start"
 	event["description"] = "Start publising."
-	return client.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event)
+	return fc.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event)
 }
 
-func (client *ClientConn) playResp(cur *ChunkStream) error {
-	client.conn.SetRecorded()
-	client.conn.SetBegin()
+func (fc *ForwardConnect) playResp(cur *ChunkStream) error {
+	fc.conn.SetRecorded()
+	fc.conn.SetBegin()
 
 	event := make(amf.Object)
 	event["level"] = "status"
 	event["code"] = "NetStream.Play.Reset"
 	event["description"] = "Playing and resetting stream."
-	if err := client.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event); err != nil {
+	if err := fc.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event); err != nil {
 		return err
 	}
 
 	event["level"] = "status"
 	event["code"] = "NetStream.Play.Start"
 	event["description"] = "Started playing stream."
-	if err := client.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event); err != nil {
+	if err := fc.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event); err != nil {
 		return err
 	}
 
 	event["level"] = "status"
 	event["code"] = "NetStream.Data.Start"
 	event["description"] = "Started playing stream."
-	if err := client.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event); err != nil {
+	if err := fc.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event); err != nil {
 		return err
 	}
 
 	event["level"] = "status"
 	event["code"] = "NetStream.Play.PublishNotify"
 	event["description"] = "Started playing notify."
-	if err := client.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event); err != nil {
+	if err := fc.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event); err != nil {
 		return err
 	}
-	return client.conn.Flush()
+	return fc.conn.Flush()
 }
 
-func (client *ClientConn) handleCmdMsg(c *ChunkStream) error {
+func (fc *ForwardConnect) handleCmdMsg(c *ChunkStream) error {
 	amfType := amf.AMF0
 	if c.TypeID == 17 {
 		c.Data = c.Data[1:]
 	}
 	r := bytes.NewReader(c.Data)
-	vs, err := client.decoder.DecodeBatch(r, amf.Version(amfType))
+	vs, err := fc.decoder.DecodeBatch(r, amf.Version(amfType))
 	if err != nil && err != io.EOF {
 		return err
 	}
@@ -265,46 +265,46 @@ func (client *ClientConn) handleCmdMsg(c *ChunkStream) error {
 	case string:
 		switch vs[0].(string) {
 		case cmdConnect:
-			if err = client.connect(vs[1:]); err != nil {
+			if err = fc.connect(vs[1:]); err != nil {
 				return err
 			}
-			if err = client.connectResp(c); err != nil {
+			if err = fc.connectResp(c); err != nil {
 				return err
 			}
 		case cmdCreateStream:
-			if err = client.createStream(vs[1:]); err != nil {
+			if err = fc.createStream(vs[1:]); err != nil {
 				return err
 			}
-			if err = client.createStreamResp(c); err != nil {
+			if err = fc.createStreamResp(c); err != nil {
 				return err
 			}
 		case cmdPublish:
-			if err = client.publishOrPlay(vs[1:]); err != nil {
+			if err = fc.publishOrPlay(vs[1:]); err != nil {
 				return err
 			}
-			if err = client.publishResp(c); err != nil {
+			if err = fc.publishResp(c); err != nil {
 				return err
 			}
-			client.done = true
-			client.isPublisher = true
+			fc.done = true
+			fc.isPublisher = true
 		case cmdPlay:
-			if err = client.publishOrPlay(vs[1:]); err != nil {
+			if err = fc.publishOrPlay(vs[1:]); err != nil {
 				return err
 			}
-			if err = client.playResp(c); err != nil {
+			if err = fc.playResp(c); err != nil {
 				return err
 			}
-			client.done = true
-			client.isPublisher = false
+			fc.done = true
+			fc.isPublisher = false
 			fmt.Printf("handle play req done\n")
 		case cmdFcpublish:
-			client.fcPublish(vs)
+			fc.fcPublish(vs)
 		case cmdReleaseStream:
-			client.releaseStream(vs)
+			fc.releaseStream(vs)
 		case cmdFCUnpublish:
 		case cmdDeleteStream:
 		default:
-			client.logger.Warnf("no support command:%s", vs[0].(string))
+			fc.logger.Warnf("no support command:%s", vs[0].(string))
 		}
 	}
 
@@ -313,10 +313,10 @@ func (client *ClientConn) handleCmdMsg(c *ChunkStream) error {
 
 //SetUpPlayOrPublish 等待客户端完成推流或拉流请求
 //todo 需要增加超时，防止连接一直在却不发送任何消息
-func (client *ClientConn) SetUpPlayOrPublish() error {
+func (fc *ForwardConnect) SetUpPlayOrPublish() error {
 	amfType := amf.AMF0
 	for {
-		chunk, err := client.conn.Read()
+		chunk, err := fc.conn.Read()
 		if err != nil {
 			return fmt.Errorf("Read chunk stream failed, %v", err)
 		}
@@ -328,7 +328,7 @@ func (client *ClientConn) SetUpPlayOrPublish() error {
 		}
 
 		r := bytes.NewReader(chunk.Data)
-		vs, err := client.decoder.DecodeBatch(r, amf.Version(amfType))
+		vs, err := fc.decoder.DecodeBatch(r, amf.Version(amfType))
 		if err != nil && err != io.EOF {
 			return fmt.Errorf("Amf DecodeBatch failed, %v", err)
 		}
@@ -336,64 +336,64 @@ func (client *ClientConn) SetUpPlayOrPublish() error {
 		if cmd, ok := vs[0].(string); ok {
 			switch cmd {
 			case cmdConnect:
-				if err = client.connect(vs[1:]); err != nil {
+				if err = fc.connect(vs[1:]); err != nil {
 					return fmt.Errorf("handle connect cmd failed, %v", err)
 				}
-				if err = client.connectResp(chunk); err != nil {
+				if err = fc.connectResp(chunk); err != nil {
 					return fmt.Errorf("connect response failed, %v", err)
 				}
 			case cmdCreateStream:
-				if err = client.createStream(vs[1:]); err != nil {
+				if err = fc.createStream(vs[1:]); err != nil {
 					return fmt.Errorf("handle create stream cmd failed, %v", err)
 				}
-				if err = client.createStreamResp(chunk); err != nil {
+				if err = fc.createStreamResp(chunk); err != nil {
 					return fmt.Errorf("create stream response failed, %v", err)
 				}
 			case cmdPublish:
-				if err = client.publishOrPlay(vs[1:]); err != nil {
+				if err = fc.publishOrPlay(vs[1:]); err != nil {
 					return fmt.Errorf("handle publish command failed, %v", err)
 				}
-				if err = client.publishResp(chunk); err != nil {
+				if err = fc.publishResp(chunk); err != nil {
 					return fmt.Errorf("publish response failed, %v", err)
 				}
-				client.isPublisher = true
+				fc.isPublisher = true
 				return nil
 			case cmdPlay:
-				if err = client.publishOrPlay(vs[1:]); err != nil {
+				if err = fc.publishOrPlay(vs[1:]); err != nil {
 					return fmt.Errorf("handle play command failed, %v", err)
 				}
-				if err = client.playResp(chunk); err != nil {
+				if err = fc.playResp(chunk); err != nil {
 					return fmt.Errorf("play response failed, %v", err)
 				}
-				client.isPublisher = false
+				fc.isPublisher = false
 				return nil
 			case cmdFcpublish:
-				client.fcPublish(vs)
+				fc.fcPublish(vs)
 			case cmdReleaseStream:
-				client.releaseStream(vs)
+				fc.releaseStream(vs)
 			case cmdFCUnpublish:
 			case cmdDeleteStream:
 			default:
-				client.logger.Warnf("no support command:%s", cmd)
+				fc.logger.Warnf("no support command:%s", cmd)
 			}
 		}
 	}
 }
 
 //ReadMsg is a method
-func (client *ClientConn) ReadMsg() error {
+func (fc *ForwardConnect) ReadMsg() error {
 	for {
-		c, err := client.conn.Read()
+		c, err := fc.conn.Read()
 		if err != nil {
 			return err
 		}
 		switch c.TypeID {
 		case 20, 17:
-			if err := client.handleCmdMsg(c); err != nil {
+			if err := fc.handleCmdMsg(c); err != nil {
 				return err
 			}
 		}
-		if client.done {
+		if fc.done {
 			break
 		}
 	}
@@ -401,12 +401,12 @@ func (client *ClientConn) ReadMsg() error {
 }
 
 //IsPublisher ...
-func (client *ClientConn) IsPublisher() bool {
-	return client.isPublisher
+func (fc *ForwardConnect) IsPublisher() bool {
+	return fc.isPublisher
 }
 
 //Write ...
-func (client *ClientConn) Write(c ChunkStream) error {
+func (fc *ForwardConnect) Write(c ChunkStream) error {
 	if c.TypeID == av.TAG_SCRIPTDATAAMF0 ||
 		c.TypeID == av.TAG_SCRIPTDATAAMF3 {
 		var err error
@@ -415,28 +415,28 @@ func (client *ClientConn) Write(c ChunkStream) error {
 		}
 		c.Length = uint32(len(c.Data))
 	}
-	return client.conn.Write(&c)
+	return fc.conn.Write(&c)
 }
 
 //Flush ...
-func (client *ClientConn) Flush() error {
-	return client.conn.Flush()
+func (fc *ForwardConnect) Flush() error {
+	return fc.conn.Flush()
 }
 
 //Read ...
-func (client *ClientConn) Read() (*ChunkStream, error) {
-	return client.conn.Read()
+func (fc *ForwardConnect) Read() (*ChunkStream, error) {
+	return fc.conn.Read()
 }
 
 //GetStreamInfo ...
-func (client *ClientConn) GetStreamInfo() (app string, name string, url string) {
-	app = client.ConnInfo.App
-	name = client.PublishInfo.Name
-	url = client.ConnInfo.TcURL + "/" + client.PublishInfo.Name
+func (fc *ForwardConnect) GetStreamInfo() (app string, name string, url string) {
+	app = fc.ConnInfo.App
+	name = fc.PublishInfo.Name
+	url = fc.ConnInfo.TcURL + "/" + fc.PublishInfo.Name
 	return
 }
 
 //Close ...
-func (client *ClientConn) Close() {
-	client.conn.Close()
+func (fc *ForwardConnect) Close() {
+	fc.conn.Close()
 }

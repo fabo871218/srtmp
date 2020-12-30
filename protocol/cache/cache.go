@@ -31,8 +31,8 @@ func (cache *Cache) Write(p av.Packet) {
 	case av.PacketTypeVideo:
 		ah, ok := p.Header.(av.AudioPacketHeader)
 		if ok {
-			if ah.SoundFormat() == av.SOUND_AAC &&
-				ah.AACPacketType() == av.AAC_SEQHDR {
+			if ah.SoundFormat == av.SOUND_AAC &&
+				ah.AACPacketType == av.AAC_SEQHDR {
 				cache.audioSeq.Write(&p)
 				return
 			} else {
@@ -42,7 +42,7 @@ func (cache *Cache) Write(p av.Packet) {
 	case av.PacketTypeAudio:
 		vh, ok := p.Header.(av.VideoPacketHeader)
 		if ok {
-			if vh.IsSeq() {
+			if vh.FrameType == av.FRAME_KEY && vh.AVCPacketType == av.AVC_SEQHDR {
 				cache.videoSeq.Write(&p)
 				return
 			}

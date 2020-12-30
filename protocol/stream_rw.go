@@ -47,14 +47,14 @@ type StreamWriter struct {
 	av.RWBaser
 	UID         string
 	closed      bool
-	conn        *core.ClientConn
+	conn        *core.ForwardConnect
 	packetQueue chan *av.Packet
 	WriteBWInfo StaticsBW
 	logger      logger.Logger
 }
 
 //NewStreamWriter 创建一个新的写入对象
-func NewStreamWriter(conn *core.ClientConn, log logger.Logger) *StreamWriter {
+func NewStreamWriter(conn *core.ForwardConnect, log logger.Logger) *StreamWriter {
 	writer := &StreamWriter{
 		UID:         utils.NewId(),
 		conn:        conn,
@@ -123,7 +123,7 @@ func (sw *StreamWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.StreamI
 		case av.PacketTypeVideo:
 			videoPkt, ok := tmpPkt.Header.(av.VideoPacketHeader)
 			// dont't drop sps config and dont't drop key frame
-			if ok && (videoPkt.IsSeq() || videoPkt.IsKeyFrame()) {
+			if ok && videoPkt.FrameType == av.FRAME_KEY {
 				pktQue <- tmpPkt
 			}
 			if len(pktQue) > maxQueueNum-10 {
@@ -230,13 +230,13 @@ type StreamReader struct {
 	av.RWBaser
 	UID        string
 	demuxer    *flv.Demuxer
-	conn       *core.ClientConn
+	conn       *core.ForwardConnect
 	ReadBWInfo StaticsBW
 	logger     logger.Logger
 }
 
 //NewStreamReader 创建一个rtmp连接读对象
-func NewStreamReader(conn *core.ClientConn, log logger.Logger) *StreamReader {
+func NewStreamReader(conn *core.ForwardConnect, log logger.Logger) *StreamReader {
 	return &StreamReader{
 		UID:        utils.NewId(),
 		conn:       conn,

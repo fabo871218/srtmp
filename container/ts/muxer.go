@@ -46,7 +46,7 @@ func (muxer *Muxer) Mux(p *av.Packet, w io.Writer) error {
 	if p.PacketType == av.PacketTypeVideo {
 		pid = videoPID
 		videoH, _ = p.Header.(av.VideoPacketHeader)
-		pts = dts + int64(videoH.CompositionTime())*int64(h264DefaultHZ)
+		pts = dts + int64(videoH.CompositionTime)*int64(h264DefaultHZ)
 	}
 	err := pes.packet(p, pts, dts)
 	if err != nil {

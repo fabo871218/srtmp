@@ -83,6 +83,7 @@ func (cc *ConnClient) waitForResponse(commandName string) error {
 		case 19, 16: //共享对象消息, afm0-19, afm3-16
 			//忽略共享消息？？
 			cc.logger.Warn("shared message received.")
+			continue
 		case 8, 9: //音视频消息, 8-音频数据  9-视频数据
 			//不应该出现音视频消息
 			return errors.New("video and audio message should not received")
@@ -93,6 +94,7 @@ func (cc *ConnClient) waitForResponse(commandName string) error {
 			//发送connect后，会接收到用户控制消息，比如Stream Begin
 			//todo 如何解析用户消息
 			cc.logger.Warn("user control message received.")
+			continue //忽略该消息
 		case 20, 17: //控制消息 amf0-20, amf3-17
 			var vs []interface{}
 			r := bytes.NewReader(cs.Data)
@@ -127,7 +129,6 @@ func (cc *ConnClient) waitForResponse(commandName string) error {
 				if !bResult || !bTransID || !bCode {
 					return fmt.Errorf("result:%v transID:%v code:%v", bResult, bTransID, bCode)
 				}
-				return nil
 			case cmdCreateStream:
 				var bResult, bTransID bool
 				for k, v := range vs {
@@ -145,7 +146,6 @@ func (cc *ConnClient) waitForResponse(commandName string) error {
 				if !bResult || !bTransID {
 					return fmt.Errorf("result:%v transID:%v", bResult, bTransID)
 				}
-				return nil
 			case cmdPlay:
 				var bResult, bStart, bReset bool
 				for _, v := range vs {
@@ -165,9 +165,6 @@ func (cc *ConnClient) waitForResponse(commandName string) error {
 				}
 				if !bResult || (!bStart && !bReset) {
 					return fmt.Errorf("result:%v start:%v reset:%v", bResult, bStart, bReset)
-				}
-				if bStart {
-					return nil
 				}
 			case cmdPublish:
 				var bResult, bStart bool
@@ -189,6 +186,7 @@ func (cc *ConnClient) waitForResponse(commandName string) error {
 				return fmt.Errorf("unknow command:%s", commandName)
 			}
 		}
+		return nil
 	}
 }
 
@@ -551,7 +549,6 @@ func (cc *ConnClient) streamConnection() (err error) {
 			cc.logger.Warn("user control message received.")
 		}
 	}
-	return nil
 }
 
 func (cc *ConnClient) setupPlayOrPublish(method string) (err error) {
@@ -607,7 +604,6 @@ func (cc *ConnClient) setupPlayOrPublish(method string) (err error) {
 			cc.logger.Warn("user control message received.")
 		}
 	}
-	return nil
 }
 
 //Start ...

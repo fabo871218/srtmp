@@ -106,22 +106,22 @@ type PacketHeader interface {
 }
 
 //AudioPacketHeader comment
-type AudioPacketHeader interface {
+type AudioPacketHeader struct {
 	PacketHeader
-	SoundFormat() uint8
-	SoundRate() uint8
-	SoundSize() uint8
-	SoundType() uint8
-	AACPacketType() uint8
+	SoundFormat   uint8
+	SoundRate     uint8
+	SoundSize     uint8
+	SoundType     uint8
+	AACPacketType uint8
 }
 
 //VideoPacketHeader ...
-type VideoPacketHeader interface {
+type VideoPacketHeader struct {
 	PacketHeader
-	IsKeyFrame() bool
-	IsSeq() bool
-	CodecID() uint8
-	CompositionTime() int32
+	FrameType       uint8
+	AVCPacketType   uint8
+	CodecID         uint8
+	CompositionTime int32
 }
 
 type Demuxer interface {

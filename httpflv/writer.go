@@ -65,7 +65,7 @@ func (flvWriter *FLVWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.Str
 		case av.PacketTypeVideo:
 			videoPkt, ok := tmpPkt.Header.(av.VideoPacketHeader)
 			// dont't drop sps config and dont't drop key frame
-			if ok && (videoPkt.IsSeq() || videoPkt.IsKeyFrame()) {
+			if ok && videoPkt.FrameType == av.FRAME_KEY {
 				fmt.Println("insert keyframe to queue")
 				pktQue <- tmpPkt
 			}

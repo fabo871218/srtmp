@@ -117,17 +117,17 @@ func (s *Server) handleConn(rtmpConn *core.RtmpConn) {
 		return
 	}
 	//创建一个服务端连接
-	clientConn := core.NewClientConn(rtmpConn, s.logger)
-	if err = clientConn.SetUpPlayOrPublish(); err != nil {
+	forwardConn := core.NewForwardConnect(rtmpConn, s.logger)
+	if err = forwardConn.SetUpPlayOrPublish(); err != nil {
 		s.logger.Errorf("SetUpPlayOrPublish failed, %s", err.Error())
 		return
 	}
 	//根据appname判断流是否存在
 	//如果是publish，如果对应的流已经存在，则关闭，重新创建
 	//如果是play，如果对应的流不存在，返回错误
-	switch clientConn.IsPublisher() {
+	switch forwardConn.IsPublisher() {
 	case true:
-		reader := protocol.NewStreamReader(clientConn, s.logger)
+		reader := protocol.NewStreamReader(forwardConn, s.logger)
 		if err := s.handler.HandleReader(reader); err != nil {
 			s.logger.Errorf("HandleReader failed, %s", err.Error())
 			return
@@ -142,11 +142,11 @@ func (s *Server) handleConn(rtmpConn *core.RtmpConn) {
 			s.handler.HandleWriter(writer)
 		}
 	case false:
-		writer := protocol.NewStreamWriter(clientConn, s.logger)
+		writer := protocol.NewStreamWriter(forwardConn, s.logger)
 		s.handler.HandleWriter(writer)
 		s.logger.Debugf("Handle new writer, %s", writer.StreamInfo().Key)
 	}
-	s.logger.Infof("Receive new connection, publisher:%v", clientConn.IsPublisher())
+	s.logger.Infof("Receive new connection, publisher:%v", forwardConn.IsPublisher())
 }
 
 // func (s *Server) handleConn1(rtmpConn *core.RtmpConn) {

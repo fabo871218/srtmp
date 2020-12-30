@@ -85,7 +85,7 @@ func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 			return fmt.Errorf("audio pkt.Header should be av.AudioPacketHeader")
 		}
 		if c.audioFirst {
-			if ah.SoundFormat() == av.SOUND_AAC {
+			if ah.SoundFormat == av.SOUND_AAC {
 				//如果音频是aac，需要先发送aac sequence header
 				sequencePkt := &av.Packet{
 					PacketType: av.PacketTypeAudio,
@@ -195,11 +195,11 @@ func (c *RtmpClient) handleVideoAudio(cs *core.ChunkStream) (err error) {
 		return fmt.Errorf("cannot convert from pkt.Header to av.VideoPacketHeader")
 	}
 
-	if vh.CodecID() != av.VIDEO_H264 {
-		return fmt.Errorf("code id:%d do not support", vh.CodecID())
+	if vh.CodecID != av.VIDEO_H264 {
+		return fmt.Errorf("code id:%d do not support", vh.CodecID)
 	}
 	//判断是不是sequence header
-	if vh.IsSeq() {
+	if vh.FrameType == av.FRAME_KEY && vh.AVCPacketType == av.AVC_SEQHDR {
 		spss, ppss, err := flv.ParseAVCSequenceHeader(pkt.Data)
 		if err != nil {
 			return fmt.Errorf("parse avc sequence header failed, %v", err)

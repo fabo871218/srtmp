@@ -86,7 +86,7 @@ func (source *Source) DropPacket(pktQue chan *av.Packet, streamInfo av.StreamInf
 		case av.PacketTypeVideo:
 			videoPkt, ok := tmpPkt.Header.(av.VideoPacketHeader)
 			// dont't drop sps config and dont't drop key frame
-			if ok && (videoPkt.IsSeq() || videoPkt.IsKeyFrame()) {
+			if ok && videoPkt.FrameType == av.FRAME_KEY {
 				pktQue <- tmpPkt
 			}
 			if len(pktQue) > maxQueueNum-10 {
@@ -219,19 +219,19 @@ func (source *Source) parse(p *av.Packet) (int32, bool, error) {
 	switch p.PacketType {
 	case av.PacketTypeVideo:
 		vh = p.Header.(av.VideoPacketHeader)
-		if vh.CodecID() != av.VIDEO_H264 {
+		if vh.CodecID != av.VIDEO_H264 {
 			return compositionTime, false, ErrNoSupportVideoCodec
 		}
-		compositionTime = vh.CompositionTime()
-		if vh.IsKeyFrame() && vh.IsSeq() {
+		compositionTime = vh.CompositionTime
+		if vh.FrameType == av.FRAME_KEY && vh.AVCPacketType == av.AVC_SEQHDR {
 			return compositionTime, true, source.tsparser.Parse(p, source.bwriter)
 		}
 	case av.PacketTypeAudio:
 		ah = p.Header.(av.AudioPacketHeader)
-		if ah.SoundFormat() != av.SOUND_AAC {
+		if ah.SoundFormat != av.SOUND_AAC {
 			return compositionTime, false, ErrNoSupportAudioCodec
 		}
-		if ah.AACPacketType() == av.AAC_SEQHDR {
+		if ah.AACPacketType == av.AAC_SEQHDR {
 			return compositionTime, true, source.tsparser.Parse(p, source.bwriter)
 		}
 	}
@@ -242,7 +242,7 @@ func (source *Source) parse(p *av.Packet) (int32, bool, error) {
 	}
 	p.Data = source.bwriter.Bytes()
 
-	if p.PacketType == av.PacketTypeVideo && vh.IsKeyFrame() {
+	if p.PacketType == av.PacketTypeVideo && vh.FrameType == av.FRAME_KEY {
 		source.cut()
 	}
 	return compositionTime, false, nil

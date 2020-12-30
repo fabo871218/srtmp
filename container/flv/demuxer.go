@@ -23,14 +23,30 @@ func (d *Demuxer) DemuxH(p *av.Packet) (err error) {
 	var tag Tag
 	switch p.PacketType {
 	case av.PacketTypeAudio:
-		_, err = tag.ParseAudioHeader(p.Data)
+		if _, err = tag.ParseAudioHeader(p.Data); err != nil {
+			return
+		}
+		p.Header = av.AudioPacketHeader{
+			SoundFormat:   tag.mediat.soundFormat,
+			SoundRate:     tag.mediat.soundRate,
+			SoundSize:     tag.mediat.soundSize,
+			SoundType:     tag.mediat.soundType,
+			AACPacketType: tag.mediat.aacPacketType,
+		}
 	case av.PacketTypeVideo:
-		_, err = tag.ParseVideoHeader(p.Data)
+		if _, err = tag.ParseVideoHeader(p.Data); err != nil {
+			return
+		}
+		p.Header = av.VideoPacketHeader{
+			FrameType:       tag.mediat.frameType,
+			AVCPacketType:   tag.mediat.avcPacketType,
+			CodecID:         tag.mediat.codecID,
+			CompositionTime: tag.mediat.compositionTime,
+		}
 	default:
 		//todo IsMetadata如何处理
 		return fmt.Errorf("Unsupport type")
 	}
-	p.Header = &tag
 	return
 }
 
@@ -42,16 +58,31 @@ func (d *Demuxer) Demux(p *av.Packet) (err error) {
 	)
 	switch p.PacketType {
 	case av.PacketTypeAudio:
-		n, err = tag.ParseAudioHeader(p.Data)
+		if n, err = tag.ParseAudioHeader(p.Data); err != nil {
+			return
+		}
+		p.Header = av.AudioPacketHeader{
+			SoundFormat:   tag.mediat.soundFormat,
+			SoundRate:     tag.mediat.soundRate,
+			SoundSize:     tag.mediat.soundSize,
+			SoundType:     tag.mediat.soundType,
+			AACPacketType: tag.mediat.aacPacketType,
+		}
 	case av.PacketTypeVideo:
-		n, err = tag.ParseVideoHeader(p.Data)
+		if n, err = tag.ParseVideoHeader(p.Data); err != nil {
+			p.Header = av.VideoPacketHeader{
+				FrameType:       tag.mediat.frameType,
+				AVCPacketType:   tag.mediat.avcPacketType,
+				CodecID:         tag.mediat.codecID,
+				CompositionTime: tag.mediat.compositionTime,
+			}
+		}
 	default:
 		return fmt.Errorf("Unsupport type:%d", p.PacketType)
 	}
 	if err != nil {
 		return
 	}
-	p.Header = &tag
 	p.Data = p.Data[n:]
 	return
 }

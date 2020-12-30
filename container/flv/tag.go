@@ -218,52 +218,6 @@ type Tag struct {
 	mediat mediaTag
 }
 
-//SoundFormat comment
-func (tag *Tag) SoundFormat() uint8 {
-	return tag.mediat.soundFormat
-}
-
-//SoundRate comment
-func (tag *Tag) SoundRate() uint8 {
-	return tag.mediat.soundRate
-}
-
-//SoundSize commnet
-func (tag *Tag) SoundSize() uint8 {
-	return tag.mediat.soundSize
-}
-
-//SoundType comment
-func (tag *Tag) SoundType() uint8 {
-	return tag.mediat.soundType
-}
-
-//AACPacketType comment
-func (tag *Tag) AACPacketType() uint8 {
-	return tag.mediat.aacPacketType
-}
-
-//IsKeyFrame comment
-func (tag *Tag) IsKeyFrame() bool {
-	return tag.mediat.frameType == av.FRAME_KEY
-}
-
-//IsSeq comment
-func (tag *Tag) IsSeq() bool {
-	return tag.mediat.frameType == av.FRAME_KEY &&
-		tag.mediat.avcPacketType == av.AVC_SEQHDR
-}
-
-//CodecID comment
-func (tag *Tag) CodecID() uint8 {
-	return tag.mediat.codecID
-}
-
-//CompositionTime comment
-func (tag *Tag) CompositionTime() int32 {
-	return tag.mediat.compositionTime
-}
-
 //ParseAudioHeader ...
 func (tag *Tag) ParseAudioHeader(b []byte) (n int, err error) {
 	if len(b) < n+1 {
@@ -426,7 +380,7 @@ func NewAACSequenceHeader(ah av.AudioPacketHeader) []byte {
 	)
 
 	objectType = 2 //AAC_LC
-	switch ah.SoundRate() {
+	switch ah.SoundRate {
 	case av.SOUND_RATE_5_5Khz, av.SOUND_RATE_7Khz:
 		samplingFrequenceIndex = 4 //不支持5.5kHz, 7Khz
 	case av.SOUND_RATE_8Khz:
@@ -457,9 +411,9 @@ func NewAACSequenceHeader(ah av.AudioPacketHeader) []byte {
 		samplingFrequenceIndex = 4
 	}
 
-	if ah.SoundType() == av.SOUND_MONO {
+	if ah.SoundType == av.SOUND_MONO {
 		channelConfiguration = 1
-	} else if ah.SoundType() == av.SOUND_STEREO {
+	} else if ah.SoundType == av.SOUND_STEREO {
 		channelConfiguration = 2
 	} else {
 		channelConfiguration = 2
@@ -474,10 +428,10 @@ func NewAACSequenceHeader(ah av.AudioPacketHeader) []byte {
 			// streamID:        0,
 		},
 		mediat: mediaTag{
-			soundFormat:   ah.SoundFormat(), //aac
-			soundRate:     ah.SoundRate(),   //44KHz
-			soundSize:     ah.SoundSize(),
-			soundType:     ah.SoundType(), //单声道
+			soundFormat:   ah.SoundFormat, //aac
+			soundRate:     ah.SoundRate,   //44KHz
+			soundSize:     ah.SoundSize,
+			soundType:     ah.SoundType, //单声道
 			aacPacketType: av.AAC_SEQHDR,
 		},
 	}
@@ -566,10 +520,10 @@ func NewAACData(ah av.AudioPacketHeader, src []byte, timeStamp uint32) (buffer [
 			streamID:        0,
 		},
 		mediat: mediaTag{
-			soundFormat:   ah.SoundFormat(),
-			soundRate:     ah.SoundRate(),
-			soundSize:     ah.SoundSize(),
-			soundType:     ah.SoundType(),
+			soundFormat:   ah.SoundFormat,
+			soundRate:     ah.SoundRate,
+			soundSize:     ah.SoundSize,
+			soundType:     ah.SoundType,
 			aacPacketType: av.AAC_RAW,
 		},
 	}

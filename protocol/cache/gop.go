@@ -88,7 +88,8 @@ func (gopCache *GopCache) Write(p *av.Packet) {
 	var ok bool
 	if p.PacketType == av.PacketTypeVideo {
 		vh := p.Header.(av.VideoPacketHeader)
-		if vh.IsKeyFrame() && !vh.IsSeq() {
+		if vh.FrameType == av.FRAME_KEY &&
+			vh.AVCPacketType != av.AVC_SEQHDR {
 			ok = true
 		}
 	}

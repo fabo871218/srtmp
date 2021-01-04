@@ -70,12 +70,13 @@ func (d *Demuxer) Demux(p *av.Packet) (err error) {
 		}
 	case av.PacketTypeVideo:
 		if n, err = tag.ParseVideoHeader(p.Data); err != nil {
-			p.Header = av.VideoPacketHeader{
-				FrameType:       tag.mediat.frameType,
-				AVCPacketType:   tag.mediat.avcPacketType,
-				CodecID:         tag.mediat.codecID,
-				CompositionTime: tag.mediat.compositionTime,
-			}
+			return
+		}
+		p.Header = av.VideoPacketHeader{
+			FrameType:       tag.mediat.frameType,
+			AVCPacketType:   tag.mediat.avcPacketType,
+			CodecID:         tag.mediat.codecID,
+			CompositionTime: tag.mediat.compositionTime,
 		}
 	default:
 		return fmt.Errorf("Unsupport type:%d", p.PacketType)

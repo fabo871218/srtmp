@@ -3,7 +3,6 @@ package srtmp
 import (
 	"bytes"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"io"
 
@@ -72,7 +71,7 @@ func (c *RtmpClient) Close() error {
 	return nil
 }
 
-//SendPacket todo
+// SendPacket 发送数据包
 func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 	if !c.isPublish {
 		return fmt.Errorf("It is not publish mode")
@@ -80,32 +79,56 @@ func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 
 	switch pkt.PacketType {
 	case av.PacketTypeAudio:
-		ah, ok := pkt.Header.(av.AudioPacketHeader)
-		if ok == false {
-			return fmt.Errorf("audio pkt.Header should be av.AudioPacketHeader")
-		}
-		if c.audioFirst {
-			if ah.SoundFormat == av.SOUND_AAC {
-				//如果音频是aac，需要先发送aac sequence header
-				sequencePkt := &av.Packet{
-					PacketType: av.PacketTypeAudio,
-					Data:       flv.NewAACSequenceHeader(ah),
-					TimeStamp:  pkt.TimeStamp,
-				}
-
-				if err := c.sendPacket(sequencePkt); err != nil {
-					return fmt.Errorf("send aac sequence header failed. %v", err)
-				}
-			}
-
-			c.audioFirst = false
-		}
-
-		pkt.Data = flv.NewAACData(ah, pkt.Data, pkt.TimeStamp)
-		if err := c.sendPacket(pkt); err != nil {
-			return fmt.Errorf("send packet failed, %v", err)
-		}
+		return c.sendAudioPacket(pkt)
 	case av.PacketTypeVideo:
+		return c.sendVideoPacket(pkt)
+	case av.PacketTypeMetadata:
+		return c.sendMetaPacket(pkt)
+	default:
+		return fmt.Errorf("Unknow packet type:%d", pkt.PacketType)
+	}
+}
+
+func (c *RtmpClient) sendAudioPacket(pkt *av.Packet) error {
+	ah, ok := pkt.Header.(av.AudioPacketHeader)
+	if ok == false {
+		return fmt.Errorf("audio pkt.Header should be av.AudioPacketHeader")
+	}
+
+	var err error
+	if ah.SoundFormat == av.SOUND_AAC && c.audioFirst {
+		//如果音频是aac，需要先发送aac sequence header
+		sequencePkt := &av.Packet{
+			PacketType: av.PacketTypeAudio,
+			Data:       flv.NewAACSequenceHeader(ah),
+			TimeStamp:  pkt.TimeStamp,
+		}
+		if err = c.sendPacketData(sequencePkt.Data, sequencePkt.TimeStamp,
+			av.PacketTypeAudio); err != nil {
+			return fmt.Errorf("send aac sequence header failed. %v", err)
+		}
+		c.audioFirst = false
+	}
+
+	if pkt.Data, err = flv.PackAudioData(&ah, pkt.StreamID, pkt.Data,
+		pkt.TimeStamp); err != nil {
+		return fmt.Errorf("Pack audio failed. %v", err)
+	}
+	if err = c.sendPacketData(pkt.Data, pkt.TimeStamp, av.PacketTypeAudio); err != nil {
+		return fmt.Errorf("send packet failed, %v", err)
+	}
+	return nil
+}
+
+func (c *RtmpClient) sendVideoPacket(pkt *av.Packet) error {
+	vh, ok := pkt.Header.(av.VideoPacketHeader)
+	if ok == false {
+		return fmt.Errorf("video pkt.Header should be av.VideoPacketHeader")
+	}
+
+	var err error
+	if vh.CodecID == av.VIDEO_H264 {
+		// 如果是h264，第一帧要发送sequence header
 		if c.videoFirst {
 			var sps, pps []byte
 			nalus := h264.ParseNalus(pkt.Data)
@@ -118,8 +141,7 @@ func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 			}
 
 			if sps == nil || pps == nil {
-				fmt.Printf("sps and pps needed for first packet\n")
-				return nil
+				return fmt.Errorf("sps and pps needed for first packet")
 			}
 			//send flv sequence header
 			sequencePkt := &av.Packet{
@@ -128,37 +150,51 @@ func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 				TimeStamp:  pkt.TimeStamp,
 			}
 
-			if err := c.sendPacket(sequencePkt); err != nil {
+			if err = c.sendPacketData(sequencePkt.Data, sequencePkt.TimeStamp,
+				av.PacketTypeVideo); err != nil {
 				return fmt.Errorf("send flv sequence header failed, %v", err)
 			}
 			c.videoFirst = false
 		}
-
-		pkt.Data = flv.NewAVCNaluData(pkt.Data, pkt.TimeStamp)
-		if err := c.sendPacket(pkt); err != nil {
-			return fmt.Errorf("send packet failed, %v", err)
-		}
-	default:
-		return fmt.Errorf("packet type is not video and audio")
+	}
+	if pkt.Data, err = flv.PackVideoData(&vh, pkt.StreamID, pkt.Data,
+		pkt.TimeStamp); err != nil {
+		return fmt.Errorf("Pack video failed, %v", err)
+	}
+	if err = c.sendPacketData(pkt.Data, pkt.TimeStamp, av.PacketTypeVideo); err != nil {
+		return fmt.Errorf("send packet failed, %v", err)
 	}
 	return nil
 }
 
-//发送数据包
-func (c *RtmpClient) sendPacket(pkt *av.Packet) error {
-	var cs core.ChunkStream
-	cs.Data = pkt.Data
-	cs.Length = uint32(len(pkt.Data))
-	cs.StreamID = c.conn.GetStreamID()
-	cs.Timestamp = pkt.TimeStamp
+func (c *RtmpClient) sendMetaPacket(pkt *av.Packet) error {
+	return fmt.Errorf("Mata data unsupport")
+}
 
-	switch pkt.PacketType {
+func (c *RtmpClient) sendPacketData(data []byte, timestamp uint32, packetType int) error {
+	if len(data) == 0 {
+		return fmt.Errorf("data length is zero")
+	}
+
+	var typeID uint32
+	switch packetType {
 	case av.PacketTypeVideo:
-		cs.TypeID = av.TAG_VIDEO
+		typeID = av.TAG_VIDEO
 	case av.PacketTypeAudio:
-		cs.TypeID = av.TAG_AUDIO
+		typeID = av.TAG_AUDIO
 	case av.PacketTypeMetadata:
-		cs.TypeID = av.TAG_SCRIPTDATAAMF0
+		typeID = av.TAG_SCRIPTDATAAMF0
+	default:
+		return fmt.Errorf("Unsupport packet type:%d", packetType)
+	}
+
+	// todo 其他的字段值是否有效
+	cs := core.ChunkStream{
+		Data:      data,
+		Length:    uint32(len(data)),
+		StreamID:  c.conn.GetStreamID(),
+		Timestamp: timestamp,
+		TypeID:    typeID,
 	}
 
 	if err := c.conn.Write(&cs); err != nil {
@@ -169,74 +205,90 @@ func (c *RtmpClient) sendPacket(pkt *av.Packet) error {
 	return nil
 }
 
-func (c *RtmpClient) handleVideoAudio(cs *core.ChunkStream) (err error) {
-	var pkt av.Packet
-	pkt.Data = cs.Data
-	pkt.StreamID = cs.StreamID
-	pkt.TimeStamp = cs.Timestamp
-	if cs.TypeID == av.TAG_AUDIO {
-		pkt.PacketType = av.PacketTypeAudio
-	} else if cs.TypeID == av.TAG_VIDEO {
-		c.logger.Debugf("Debug.... %s", hex.EncodeToString(cs.Data[:20]))
-		pkt.PacketType = av.PacketTypeVideo
+// 从ChunkStream中解析音频和视频数据
+func (c *RtmpClient) handleVideoAudio(cs *core.ChunkStream) error {
+	var pktType uint32
+	switch cs.TypeID {
+	case av.TAG_VIDEO:
+		pktType = av.PacketTypeVideo
+	case av.TAG_AUDIO:
+		pktType = av.PacketTypeAudio
+	case av.TAG_SCRIPTDATAAMF0, av.TAG_SCRIPTDATAAMF3:
+		pktType = av.PacketTypeMetadata
+	default:
+		return fmt.Errorf("Unknow chunk type:%d", cs.TypeID)
+	}
+
+	var err error
+	pkt := av.Packet{
+		Data:       cs.Data,
+		StreamID:   cs.StreamID,
+		TimeStamp:  cs.Timestamp,
+		PacketType: pktType,
 	}
 	if err = c.demuxer.Demux(&pkt); err != nil {
 		return fmt.Errorf("Demux failed, %v", err)
 	}
 
-	if pkt.PacketType == av.PacketTypeAudio {
-		//如果是音频数据，直接回调出去
+	switch pkt.PacketType {
+	case av.PacketTypeAudio: //处理音频数据
 		c.onPacketReceive(&pkt)
-		return nil
-	}
-	//如果是视频数据，需要区分是不是sequence header，如果是sequence，需要解析出sps和pps信息
-	vh, ok := pkt.Header.(av.VideoPacketHeader)
-	if !ok {
-		return fmt.Errorf("cannot convert from pkt.Header to av.VideoPacketHeader")
-	}
+	case av.PacketTypeVideo: //处理视频数据
+		vh, ok := pkt.Header.(av.VideoPacketHeader)
+		if ok == false {
+			return fmt.Errorf("cannot convert from pkt.Header to av.VideoPacketHeader")
+		}
+		switch vh.CodecID {
+		case av.VIDEO_H264:
+			// 如果是h264的sequence header，需要解析出sps和pps
+			if vh.FrameType == av.FRAME_KEY && vh.AVCPacketType == av.AVC_SEQHDR {
+				spss, ppss, err := flv.ParseAVCSequenceHeader(pkt.Data)
+				if err != nil {
+					return fmt.Errorf("Parse avc sequence header failed, %v", err)
+				}
 
-	if vh.CodecID != av.VIDEO_H264 {
-		return fmt.Errorf("code id:%d do not support", vh.CodecID)
-	}
-	//判断是不是sequence header
-	if vh.FrameType == av.FRAME_KEY && vh.AVCPacketType == av.AVC_SEQHDR {
-		spss, ppss, err := flv.ParseAVCSequenceHeader(pkt.Data)
-		if err != nil {
-			return fmt.Errorf("parse avc sequence header failed, %v", err)
-		}
-		//如果解析到多个sps和pps，只返回第一个sps和pps
-		if len(spss) > 0 {
-			pkt.Data = spss[0]
-			c.onPacketReceive(&pkt)
-		}
-		if len(ppss) > 0 {
-			pkt.Data = ppss[0]
-			c.onPacketReceive(&pkt)
-		}
-		return nil
-	}
-	//解析后的数据格式为 4字节长度+nalue数据+4字节长度+nalu数据。。。
-	//解析出所以的nalu数据
-	index := 0
-	naluData := pkt.Data
-	for {
-		remain := len(naluData[index:])
-		if remain < 4 {
-			if remain != 0 {
-				c.logger.Warnf("Invalid data length, remain:%d", remain)
+				//如果解析到多个sps和pps，只返回第一个sps和pps
+				if len(spss) > 0 {
+					pkt.Data = spss[0]
+					c.onPacketReceive(&pkt)
+				}
+				if len(ppss) > 0 {
+					pkt.Data = ppss[0]
+					c.onPacketReceive(&pkt)
+				}
+				return nil
 			}
-			return nil
+		default:
 		}
 
-		length := binary.BigEndian.Uint32(naluData[index:])
-		if length > uint32(remain-4) {
-			return fmt.Errorf("invalid data length:%d remain:%d", length, remain-4)
+		//解析后的数据格式为 4字节长度+nalue数据+4字节长度+nalu数据。。。
+		//解析出所以的nalu数据
+		index := 0
+		naluData := pkt.Data
+		for {
+			remain := len(naluData[index:])
+			if remain < 4 {
+				if remain != 0 {
+					c.logger.Warnf("Invalid data length, remain:%d", remain)
+				}
+				return nil
+			}
+
+			length := binary.BigEndian.Uint32(naluData[index:])
+			if length > uint32(remain-4) {
+				return fmt.Errorf("invalid data length:%d remain:%d", length, remain-4)
+			}
+			index += 4
+			pkt.Data = naluData[index : index+int(length)]
+			index += int(length)
+			c.onPacketReceive(&pkt)
 		}
-		index += 4
-		pkt.Data = naluData[index : index+int(length)]
-		index += int(length)
-		c.onPacketReceive(&pkt)
+	case av.TAG_SCRIPTDATAAMF0, av.TAG_SCRIPTDATAAMF3:
+		return fmt.Errorf("TODO")
+	default:
+		return fmt.Errorf("unknow chunk stream type:%d", cs.TypeID)
 	}
+	return nil
 }
 
 func (c *RtmpClient) handleMetadata(cs *core.ChunkStream) (err error) {
@@ -296,7 +348,6 @@ func (c *RtmpClient) streamPlayProc() {
 
 		switch cs.TypeID {
 		case av.TAG_AUDIO, av.TAG_VIDEO:
-			c.logger.Debugf("Receive a media data..... type:%d len:%d", cs.TypeID, len(cs.Data))
 			if err := c.handleVideoAudio(cs); err != nil {
 				c.logger.Errorf("handle media data failed, %v", err)
 			}

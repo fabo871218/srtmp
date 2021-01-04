@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"flag"
+	"fmt"
 	"io/ioutil"
 	"time"
 
@@ -12,10 +14,15 @@ import (
 var startCode []byte = []byte{0x00, 0x00, 0x00, 0x01}
 
 func main() {
+	host := flag.String("host", "", "rtmp server host")
+	port := flag.Int("port", 1935, "rtmp server port")
+	flag.Parse()
+
 	api := srtmp.NewAPI()
 	client := api.NewRtmpClient()
 
-	if err := client.OpenPublish("rtmp://127.0.0.1:1935/srtmp/livego"); err != nil {
+	rtmpURL := fmt.Sprintf("rtmp://%s:%d/srtmp/livego", *host, *port)
+	if err := client.OpenPublish(rtmpURL); err != nil {
 		panic(err)
 	}
 
@@ -48,6 +55,13 @@ func main() {
 					PacketType: av.PacketTypeVideo,
 					TimeStamp:  uint32(timeStamp),
 					Data:       make([]byte, index-pre),
+					StreamID:   0,
+					Header: av.VideoPacketHeader{
+						FrameType:       av.FRAME_KEY,
+						CodecID:         av.VIDEO_H264,
+						AVCPacketType:   av.AVC_NALU,
+						CompositionTime: 0,
+					},
 				}
 				copy(pkt.Data, data[pre:index])
 				if err := client.SendPacket(pkt); err != nil {

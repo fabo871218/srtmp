@@ -1,46 +1,50 @@
 package cache
 
-import (
-	"bytes"
-	"log"
+// import (
+// 	"bytes"
+// 	"log"
 
-	"github.com/fabo871218/srtmp/av"
-	"github.com/fabo871218/srtmp/protocol/amf"
-)
+// 	"github.com/fabo871218/srtmp/av"
+// 	"github.com/fabo871218/srtmp/protocol"
+// 	"github.com/fabo871218/srtmp/protocol/amf"
+// )
 
-const (
-	SetDataFrame string = "@setDataFrame"
-	OnMetaData   string = "onMetaData"
-)
+// const (
+// 	SetDataFrame string = "@setDataFrame"
+// 	OnMetaData   string = "onMetaData"
+// )
 
-var setFrameFrame []byte
+// var setFrameFrame []byte
 
-func init() {
-	b := bytes.NewBuffer(nil)
-	encoder := &amf.Encoder{}
-	if _, err := encoder.Encode(b, SetDataFrame, amf.AMF0); err != nil {
-		log.Fatal(err)
-	}
-	setFrameFrame = b.Bytes()
-}
+// func init() {
+// 	b := bytes.NewBuffer(nil)
+// 	encoder := &amf.Encoder{}
+// 	if _, err := encoder.Encode(b, SetDataFrame, amf.AMF0); err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	setFrameFrame = b.Bytes()
+// }
 
-type SpecialCache struct {
-	full bool
-	p    *av.Packet
-}
+// // SpecialCache ...
+// type SpecialCache struct {
+// 	full bool
+// 	p    *av.Packet
+// }
 
-func NewSpecialCache() *SpecialCache {
-	return &SpecialCache{}
-}
+// // NewSpecialCache ...
+// func NewSpecialCache() *SpecialCache {
+// 	return &SpecialCache{}
+// }
 
-func (specialCache *SpecialCache) Write(p *av.Packet) {
-	specialCache.p = p
-	specialCache.full = true
-}
+// func (specialCache *SpecialCache) Write(p *av.Packet) {
+// 	specialCache.p = p
+// 	specialCache.full = true
+// }
 
-func (specialCache *SpecialCache) Send(w av.WriteCloser) error {
-	if !specialCache.full {
-		return nil
-	}
-	return w.Write(specialCache.p)
-}
+// // Send ...
+// func (specialCache *SpecialCache) Send(w protocol.WriteCloser) error {
+// 	if !specialCache.full {
+// 		return nil
+// 	}
+// 	return w.Write(specialCache.p)
+// }

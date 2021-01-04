@@ -12,6 +12,7 @@ type DefaultFactory struct {
 }
 
 type defaultLogger struct {
+	level LogLevel
 }
 
 //NewDefaultFactory ...
@@ -20,8 +21,10 @@ func NewDefaultFactory() *DefaultFactory {
 }
 
 //NewLogger ...
-func (f *DefaultFactory) NewLogger(scope string) Logger {
-	return defaultLogger{}
+func (f *DefaultFactory) NewLogger(scope LogLevel) Logger {
+	return defaultLogger{
+		level: scope,
+	}
 }
 
 func (log defaultLogger) Trace(msg string) {
@@ -65,6 +68,9 @@ func (log defaultLogger) Errorf(format string, args ...interface{}) {
 }
 
 func (log defaultLogger) output(callDepth int, level LogLevel, s string) {
+	if log.level < level {
+		return
+	}
 	var (
 		file string
 		line int

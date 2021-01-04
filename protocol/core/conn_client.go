@@ -382,7 +382,7 @@ func (cc *ConnClient) connectServer(url string) error {
 		return fmt.Errorf("net.DialTCP failed, %v", err)
 	}
 
-	rtmpConn := NewConn(conn, 4*1024)
+	rtmpConn := NewRtmpConn(conn, 4*1024)
 	defer func() {
 		if err != nil {
 			rtmpConn.Close()

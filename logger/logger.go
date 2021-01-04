@@ -66,5 +66,5 @@ type Logger interface {
 
 //LoggerFactory interface
 type LoggerFactory interface {
-	NewLogger(scope string) Logger
+	NewLogger(scope LogLevel) Logger
 }

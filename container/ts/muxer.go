@@ -98,7 +98,7 @@ func (muxer *Muxer) Mux(p *av.Packet, w io.Writer) error {
 
 		//关键帧需要加pcr
 		if first && p.PacketType == av.PacketTypeVideo &&
-			videoH.IsKeyFrame() {
+			videoH.FrameType == av.FRAME_KEY {
 			muxer.tsPacket[3] |= 0x20
 			muxer.tsPacket[i] = 7
 			i++

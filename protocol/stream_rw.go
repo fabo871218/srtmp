@@ -3,9 +3,7 @@ package protocol
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/fabo871218/srtmp/av"
@@ -19,6 +17,21 @@ const (
 	maxQueueNum         = 1024
 	saveStaticsInterval = 5000
 )
+
+// ReadCloser ...
+type ReadCloser interface {
+	Close()
+	Alive() bool
+	Read(*av.Packet) error
+}
+
+// WriteCloser ...
+type WriteCloser interface {
+	Close()
+	Alive() bool
+	CalcBaseTimestamp()
+	Write(*av.Packet) error
+}
 
 //StaticsBW todo comment
 type StaticsBW struct {
@@ -34,34 +47,28 @@ type StaticsBW struct {
 	LastTimestamp int64
 }
 
-//StreamReadWriteCloser todo comment
-type StreamReadWriteCloser interface {
-	GetStreamInfo() (string, string, string)
-	Close()
-	Write(core.ChunkStream) error
-	Read(c *core.ChunkStream) error
-}
-
 //StreamWriter 是代表rtmp连接的写入对象
 type StreamWriter struct {
 	av.RWBaser
-	UID         string
-	closed      bool
-	conn        *core.ForwardConnect
-	packetQueue chan *av.Packet
-	WriteBWInfo StaticsBW
-	logger      logger.Logger
+	UID          string
+	closed       bool
+	keyframeNeed bool
+	conn         *core.ForwardConnect
+	packetQueue  chan *av.Packet
+	WriteBWInfo  StaticsBW
+	logger       logger.Logger
 }
 
 //NewStreamWriter 创建一个新的写入对象
 func NewStreamWriter(conn *core.ForwardConnect, log logger.Logger) *StreamWriter {
 	writer := &StreamWriter{
-		UID:         utils.NewId(),
-		conn:        conn,
-		RWBaser:     av.NewRWBaser(time.Second * 10),
-		packetQueue: make(chan *av.Packet, maxQueueNum),
-		WriteBWInfo: StaticsBW{0, 0, 0, 0, 0, 0, 0, 0},
-		logger:      log,
+		UID:          utils.NewId(),
+		conn:         conn,
+		RWBaser:      av.NewRWBaser(time.Second * 10),
+		packetQueue:  make(chan *av.Packet, maxQueueNum),
+		WriteBWInfo:  StaticsBW{0, 0, 0, 0, 0, 0, 0, 0},
+		logger:       log,
+		keyframeNeed: true,
 	}
 
 	//todo 这个是否有必要先检查一下读写情况
@@ -110,56 +117,35 @@ func (sw *StreamWriter) Check() {
 	}
 }
 
-//DropPacket todo
-func (sw *StreamWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.StreamInfo) {
-	sw.logger.Debugf("[%v] packet queue max!!!", streamInfo)
-	for i := 0; i < maxQueueNum-84; i++ {
-		tmpPkt, ok := <-pktQue
-		if !ok {
-			continue
-		}
-
-		switch tmpPkt.PacketType {
-		case av.PacketTypeVideo:
-			videoPkt, ok := tmpPkt.Header.(av.VideoPacketHeader)
-			// dont't drop sps config and dont't drop key frame
-			if ok && videoPkt.FrameType == av.FRAME_KEY {
-				pktQue <- tmpPkt
-			}
-			if len(pktQue) > maxQueueNum-10 {
-				sw.logger.Warn("Drop video pkt")
-				<-pktQue
-			}
-		case av.PacketTypeAudio:
-			if len(pktQue) > maxQueueNum-2 {
-				sw.logger.Warn("Drop audio pkt")
-				<-pktQue
-			} else {
-				pktQue <- tmpPkt
-			}
-		default:
-		}
-	}
-	sw.logger.Debugf("Packet queue len: %d", len(pktQue))
-}
-
 //Write ...
 func (sw *StreamWriter) Write(p *av.Packet) (err error) {
-	err = nil
 	if sw.closed {
 		err = errors.New("PeerWriter closed")
 		return
 	}
 	defer func() {
 		if e := recover(); e != nil {
-			errString := fmt.Sprintf("PeerWriter has already been closed:%v", e)
-			err = errors.New(errString)
+			err = fmt.Errorf("Panic %v", e)
 		}
 	}()
-	if len(sw.packetQueue) >= maxQueueNum-24 {
-		sw.DropPacket(sw.packetQueue, sw.StreamInfo())
-	} else {
-		sw.packetQueue <- p
+
+	if p.PacketType == av.PacketTypeVideo {
+		if sw.keyframeNeed {
+			if !p.Header.IsKeyFrame() {
+				sw.logger.Warn("Key frame need.")
+				return
+			}
+			sw.keyframeNeed = true
+		}
+	}
+
+	select {
+	case sw.packetQueue <- p:
+	default:
+		if p.PacketType == av.PacketTypeVideo && p.Header.IsKeyFrame() {
+			sw.keyframeNeed = true
+		}
+		sw.logger.Warn("packet droped...")
 	}
 	return
 }
@@ -203,18 +189,18 @@ func (sw *StreamWriter) SendPacket() error {
 }
 
 //StreamInfo todo comment
-func (sw *StreamWriter) StreamInfo() (ret av.StreamInfo) {
-	ret.UID = sw.UID
-	_, _, URL := sw.conn.GetStreamInfo()
-	ret.URL = URL
-	_url, err := url.Parse(URL)
-	if err != nil {
-		fmt.Printf("Parse url failed, url:%s err:%v\n", URL, err)
-	}
-	ret.Key = strings.TrimLeft(_url.Path, "/")
-	ret.Inter = true
-	return
-}
+// func (sw *StreamWriter) StreamInfo() (ret av.StreamInfo) {
+// 	ret.UID = sw.UID
+// 	_, _, URL := sw.conn.GetStreamInfo()
+// 	ret.URL = URL
+// 	_url, err := url.Parse(URL)
+// 	if err != nil {
+// 		fmt.Printf("Parse url failed, url:%s err:%v\n", URL, err)
+// 	}
+// 	ret.Key = strings.TrimLeft(_url.Path, "/")
+// 	ret.Inter = true
+// 	return
+// }
 
 //Close todo comment
 func (sw *StreamWriter) Close() {
@@ -315,17 +301,17 @@ func (pr *StreamReader) Read(p *av.Packet) (err error) {
 }
 
 //StreamInfo 返回信息
-func (pr *StreamReader) StreamInfo() (ret av.StreamInfo) {
-	ret.UID = pr.UID
-	_, _, URL := pr.conn.GetStreamInfo()
-	ret.URL = URL
-	_url, err := url.Parse(URL)
-	if err != nil {
-		fmt.Printf("Parse url failed, url:%s err:%v\n", URL, err)
-	}
-	ret.Key = strings.TrimLeft(_url.Path, "/")
-	return
-}
+// func (pr *StreamReader) StreamInfo() (ret av.StreamInfo) {
+// 	ret.UID = pr.UID
+// 	_, _, URL := pr.conn.GetStreamInfo()
+// 	ret.URL = URL
+// 	_url, err := url.Parse(URL)
+// 	if err != nil {
+// 		fmt.Printf("Parse url failed, url:%s err:%v\n", URL, err)
+// 	}
+// 	ret.Key = strings.TrimLeft(_url.Path, "/")
+// 	return
+// }
 
 //Close 关闭读对象
 func (pr *StreamReader) Close() {

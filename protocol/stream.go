@@ -9,17 +9,25 @@ import (
 	"github.com/fabo871218/srtmp/protocol/cache"
 )
 
+type StreamInfo1 struct {
+	Key  string
+	App  string
+	Name string
+	URL  string
+}
+
 //RtmpStream rtmp流类型
 type RtmpStream struct {
+	streamID   string
 	isStart    bool
 	cache      *cache.Cache
-	reader     av.ReadCloser
-	writers    []av.WriteCloser
-	streamInfo av.StreamInfo
+	reader     ReadCloser
+	writers    []WriteCloser
+	streamInfo StreamInfo1
 
 	pktChan       chan *av.Packet
-	writerChan    chan av.WriteCloser
-	readerChan    chan av.ReadCloser
+	writerChan    chan WriteCloser
+	readerChan    chan ReadCloser
 	streamHandler *StreamHandler
 	logger        logger.Logger
 }
@@ -27,23 +35,23 @@ type RtmpStream struct {
 //PackWriterCloser packet写对象结构
 type PackWriterCloser struct {
 	init bool
-	w    av.WriteCloser
+	w    WriteCloser
 }
 
 //NewWriter 创建新的写对象
-func (p *PackWriterCloser) NewWriter() (av.WriteCloser, error) {
+func (p *PackWriterCloser) NewWriter() (WriteCloser, error) {
 	return p.w, nil
 }
 
 //NewStream 创建新的rtmp流
-func NewStream(streamInfo av.StreamInfo, handler *StreamHandler, log logger.Logger) *RtmpStream {
+func NewStream(streamInfo StreamInfo1, handler *StreamHandler, log logger.Logger) *RtmpStream {
 	return &RtmpStream{
 		streamInfo:    streamInfo,
 		cache:         cache.NewCache(),
 		streamHandler: handler,
-		writers:       make([]av.WriteCloser, 0),
-		writerChan:    make(chan av.WriteCloser, 1),
-		readerChan:    make(chan av.ReadCloser, 1),
+		writers:       make([]WriteCloser, 0),
+		writerChan:    make(chan WriteCloser, 1),
+		readerChan:    make(chan ReadCloser, 1),
 		pktChan:       make(chan *av.Packet, 16),
 		logger:        log,
 	}
@@ -52,18 +60,18 @@ func NewStream(streamInfo av.StreamInfo, handler *StreamHandler, log logger.Logg
 //ID 获取rtmp流id
 func (s *RtmpStream) ID() string {
 	if s.reader != nil {
-		return s.reader.StreamInfo().UID
+		return s.streamID
 	}
 	return ""
 }
 
 //GetReader 获取rtmp流读对象
-func (s *RtmpStream) GetReader() av.ReadCloser {
+func (s *RtmpStream) GetReader() ReadCloser {
 	return s.reader
 }
 
 //AddReader 为rtmp流对象添加一个读对象
-func (s *RtmpStream) AddReader(r av.ReadCloser) error {
+func (s *RtmpStream) AddReader(r ReadCloser) error {
 	go func() {
 		s.readerChan <- r
 	}()
@@ -71,7 +79,7 @@ func (s *RtmpStream) AddReader(r av.ReadCloser) error {
 }
 
 //AddWriter 为rtmp流对象添加一个写对象
-func (s *RtmpStream) AddWriter(w av.WriteCloser) error {
+func (s *RtmpStream) AddWriter(w WriteCloser) error {
 	go func() {
 		s.writerChan <- w
 	}()
@@ -91,7 +99,7 @@ func (s *RtmpStream) startRead(wg *sync.WaitGroup) {
 		}
 
 		//先缓存数据包
-		s.cache.Write(*pkt)
+		s.cache.Write(pkt)
 		select {
 		case s.pktChan <- pkt:
 		default:
@@ -137,16 +145,23 @@ func (s *RtmpStream) streamLoop() {
 					lastWriteRemove = time.Now()
 				}
 			}
-		case w := <-s.writerChan:
+		case w := <-s.writerChan: // 接收到play消息
 			{
-				if err := s.cache.Send(w); err != nil {
+				// todo 这个方法不是很好，先这样，后续再优化
+				sw, ok := w.(*StreamWriter)
+				if ok == false {
+					s.logger.Errorf("can not cast writerclose to streamwriter")
+					w.Close()
+					return
+				}
+				if err := s.cache.Send(sw.packetQueue); err != nil {
 					s.logger.Errorf("Send cache failed, %s", err.Error())
 					w.Close()
-				} else {
-					s.writers = append(s.writers, w)
+					return
 				}
+				s.writers = append(s.writers, w)
 			}
-		case r := <-s.readerChan:
+		case r := <-s.readerChan: // 接收到push消息
 			{
 				if s.reader != nil {
 					s.reader.Close()
@@ -202,7 +217,7 @@ func (s *RtmpStream) streamLoop() {
 func (s *RtmpStream) close() {
 	if s.reader != nil {
 		s.reader.Close()
-		s.logger.Infof("[%s] publish closed.", s.reader.StreamInfo().Key)
+		s.logger.Infof("[%s] publish closed.", s.streamID)
 	}
 
 	//可能writerChan或readerChan中有未处理的writer和reader

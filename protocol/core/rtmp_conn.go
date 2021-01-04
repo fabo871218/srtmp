@@ -32,8 +32,8 @@ type RtmpConn struct {
 	chunks              map[uint32]*ChunkStream
 }
 
-//NewConn ...
-func NewConn(c net.Conn, bufferSize int) *RtmpConn {
+//NewRtmpConn ...
+func NewRtmpConn(c net.Conn, bufferSize int) *RtmpConn {
 	return &RtmpConn{
 		Conn:                c,
 		chunkSize:           128,

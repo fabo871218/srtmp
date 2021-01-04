@@ -29,7 +29,7 @@ func NewAPI(opts ...SettingFunc) *RtmpAPI {
 	if setting.logLevel == logger.LogLevelDisabled {
 		setting.logLevel = logger.LogLevelInfo
 	}
-	api.logger = setting.loggerFactory.NewLogger(setting.logLevel.String())
+	api.logger = setting.loggerFactory.NewLogger(setting.logLevel)
 	api.setting = setting
 	return api
 }
@@ -37,9 +37,8 @@ func NewAPI(opts ...SettingFunc) *RtmpAPI {
 //ServeRtmp 创建一个rtmp服务，并监听响应的地址
 func (api *RtmpAPI) ServeRtmp(addr string) error {
 	server := &Server{
-		handler:      protocol.NewStreamHandler(api.logger),
-		extendWriter: nil,
-		logger:       api.logger,
+		handler: protocol.NewStreamHandler(api.logger),
+		logger:  api.logger,
 	}
 	return server.Serve(addr)
 }
@@ -47,9 +46,8 @@ func (api *RtmpAPI) ServeRtmp(addr string) error {
 //ServeRtmpTLS 创建一个rtmp服务，并监听响应的地址
 func (api *RtmpAPI) ServeRtmpTLS(addr, tlsKey, tlsCrt string) error {
 	server := &Server{
-		handler:      protocol.NewStreamHandler(api.logger),
-		extendWriter: nil,
-		logger:       api.logger,
+		handler: protocol.NewStreamHandler(api.logger),
+		logger:  api.logger,
 	}
 	return server.ServeTLS(addr, tlsKey, tlsCrt)
 }

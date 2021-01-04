@@ -1,8 +1,9 @@
 package av
 
 import (
-	"fmt"
 	"io"
+
+	"registry.code.tuya-inc.top/jiangfb/srtmp/av"
 )
 
 const (
@@ -69,6 +70,7 @@ const (
 	AVC_EOS    = 2 // avc end of sequence
 
 	//avc视频编码id
+	VIDEO_JPEG = 1
 	VIDEO_H264 = 7
 )
 
@@ -87,27 +89,20 @@ var (
 
 // Header can be converted to AudioHeaderInfo or VideoHeaderInfo
 type Packet struct {
-	PacketType uint32
+	PacketType uint32 // packet类型
 	TimeStamp  uint32 // dts
 	StreamID   uint32
 	Header     PacketHeader
 	Data       []byte
 }
 
-type StreamInfo struct {
-	Key   string
-	URL   string
-	UID   string
-	Inter bool
-}
-
 //PacketHeader comment
 type PacketHeader interface {
+	IsKeyFrame() bool
 }
 
 //AudioPacketHeader comment
 type AudioPacketHeader struct {
-	PacketHeader
 	SoundFormat   uint8
 	SoundRate     uint8
 	SoundSize     uint8
@@ -115,13 +110,23 @@ type AudioPacketHeader struct {
 	AACPacketType uint8
 }
 
+func (ah AudioPacketHeader) IsKeyFrame() bool {
+	return false
+}
+
 //VideoPacketHeader ...
 type VideoPacketHeader struct {
-	PacketHeader
 	FrameType       uint8
 	AVCPacketType   uint8
 	CodecID         uint8
 	CompositionTime int32
+}
+
+func (vh VideoPacketHeader) IsKeyFrame() bool {
+	if vh.CodecID == av.VIDEO_H264 {
+		return vh.FrameType == av.FRAME_KEY && vh.AVCPacketType == av.AVC_NALU
+	}
+	return vh.FrameType == av.FRAME_KEY
 }
 
 type Demuxer interface {
@@ -139,37 +144,4 @@ type SampleRater interface {
 type CodecParser interface {
 	SampleRater
 	Parse(*Packet, io.Writer) error
-}
-
-type ExtendWriter interface {
-	NewWriter(StreamInfo) (WriteCloser, error)
-}
-
-type Handler interface {
-	HandleReader(ReadCloser) error
-	HandleWriter(WriteCloser) error
-}
-
-func (streamInfo StreamInfo) IsInterval() bool {
-	return streamInfo.Inter
-}
-
-func (streamInfo StreamInfo) String() string {
-	return fmt.Sprintf("<key: %s, URL: %s, UID: %s, Inter: %v>",
-		streamInfo.Key, streamInfo.URL, streamInfo.UID, streamInfo.Inter)
-}
-
-type ReadCloser interface {
-	StreamInfo() StreamInfo
-	Close()
-	Alive() bool
-	Read(*Packet) error
-}
-
-type WriteCloser interface {
-	StreamInfo() StreamInfo
-	Close()
-	Alive() bool
-	CalcBaseTimestamp()
-	Write(*Packet) error
 }

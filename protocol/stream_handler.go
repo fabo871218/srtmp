@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/fabo871218/srtmp/av"
 	"github.com/fabo871218/srtmp/logger"
+	"github.com/fabo871218/srtmp/protocol/core"
 )
 
 //StreamHandler 管理RtmpStream，每个RtmpStream代表一路流
@@ -28,7 +28,7 @@ func NewStreamHandler(log logger.Logger) *StreamHandler {
 
 //get rtmp stream, if not exist, create a new one
 //bool indicate weathe the stream is new, true-new false-not
-func (h *StreamHandler) getOrCreate(streamInfo av.StreamInfo) *RtmpStream {
+func (h *StreamHandler) getOrCreate(streamInfo StreamInfo1) *RtmpStream {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 	if stream, ok := h.streams[streamInfo.Key]; ok {
@@ -60,41 +60,27 @@ func (h *StreamHandler) GetStreams() []*RtmpStream {
 	return streams
 }
 
-//HandleReader 创建和添加一个新的rtmp stream
-//todo 要判断是否有错误
-func (h *StreamHandler) HandleReader(r av.ReadCloser) error {
-	stream := h.getOrCreate(r.StreamInfo())
-	if err := stream.AddReader(r); err != nil {
-		return fmt.Errorf("stream.AddReader faile, %v", err)
+// HandleConnect ...
+func (h *StreamHandler) HandleConnect(conn *core.ForwardConnect) error {
+	app, name, url := conn.GetStreamInfo()
+	streamInfo := StreamInfo1{
+		Key:  "", //todo
+		App:  app,
+		Name: name,
+		URL:  url,
 	}
-	return nil
-	// var stream *RtmpStream
-	// i, ok := rs.streams.Get(streamInfo.Key)
-	// if stream, ok = i.(*RtmpStream); ok {
-	// 	glog.Infof("find stream:%s stop and rebuild.", streamInfo.Key)
-	// 	stream.TransStop()
-	// 	id := stream.ID()
-	// 	if id != EmptyID && id != streamInfo.UID {
-	// 		ns := NewStream()
-	// 		stream.Copy(ns)
-	// 		stream = ns
-	// 		rs.streams.Set(streamInfo.Key, ns)
-	// 	}
-	// } else {
-	// 	stream = NewStream()
-	// 	rs.streams.Set(streamInfo.Key, stream)
-	// 	stream.streamInfo = streamInfo
-	// }
 
-	// stream.AddReader(r)
-}
-
-//HandleWriter 处理rtmp写入对象
-//todo 要判断是否有错误
-func (h *StreamHandler) HandleWriter(w av.WriteCloser) error {
-	stream := h.getOrCreate(w.StreamInfo())
-	if err := stream.AddWriter(w); err != nil {
-		return fmt.Errorf("stream.AddWriter faile, %v", err)
+	stream := h.getOrCreate(streamInfo)
+	if conn.IsPublisher() {
+		writer := NewStreamWriter(conn, h.logger)
+		if err := stream.AddWriter(writer); err != nil {
+			return fmt.Errorf("Add stream writer failed, %v", err)
+		}
+	} else {
+		reader := NewStreamReader(conn, h.logger)
+		if err := stream.AddReader(reader); err != nil {
+			return fmt.Errorf("Add stream reader failed, %v", err)
+		}
 	}
 	return nil
 }

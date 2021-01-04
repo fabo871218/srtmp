@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"errors"
 	"flag"
 
 	"github.com/fabo871218/srtmp/av"
@@ -10,67 +11,88 @@ var (
 	gopNum = flag.Int("gopNum", 1, "gop num")
 )
 
+// Cache ...
 type Cache struct {
 	gop      *GopCache
-	videoSeq *SpecialCache
-	audioSeq *SpecialCache
-	metadata *SpecialCache
+	videoSeq *av.Packet
+	audioSeq *av.Packet
+	metadata *av.Packet
 }
 
+// NewCache ...
 func NewCache() *Cache {
 	return &Cache{
 		gop:      NewGopCache(*gopNum),
-		videoSeq: NewSpecialCache(),
-		audioSeq: NewSpecialCache(),
-		metadata: NewSpecialCache(),
+		videoSeq: nil,
+		audioSeq: nil,
+		metadata: nil,
 	}
 }
 
-func (cache *Cache) Write(p av.Packet) {
+func (cache *Cache) Write(p *av.Packet) {
 	switch p.PacketType {
-	case av.PacketTypeVideo:
-		ah, ok := p.Header.(av.AudioPacketHeader)
-		if ok {
-			if ah.SoundFormat == av.SOUND_AAC &&
-				ah.AACPacketType == av.AAC_SEQHDR {
-				cache.audioSeq.Write(&p)
-				return
-			} else {
-				return
-			}
-		}
 	case av.PacketTypeAudio:
-		vh, ok := p.Header.(av.VideoPacketHeader)
-		if ok {
-			if vh.FrameType == av.FRAME_KEY && vh.AVCPacketType == av.AVC_SEQHDR {
-				cache.videoSeq.Write(&p)
-				return
-			}
-		} else {
+		ah, ok := p.Header.(av.AudioPacketHeader)
+		if ok == false {
 			return
 		}
+		// 目前只处理aac的sequence header，如果后续要支持更多的格式
+		// 可在此添加
+		if ah.SoundFormat == av.SOUND_AAC && ah.AACPacketType == av.AAC_SEQHDR {
+			cache.audioSeq = p
+			return
+		}
+	case av.PacketTypeVideo:
+		vh, ok := p.Header.(av.VideoPacketHeader)
+		if ok == false {
+			return
+		}
+
+		// 这里目前只处理h264的sequence和gop缓存
+		if vh.CodecID == av.VIDEO_H264 {
+			if vh.FrameType == av.FRAME_KEY {
+				if vh.AVCPacketType == av.AVC_SEQHDR {
+					cache.videoSeq = p
+				} else {
+					cache.gop.Write(p, true)
+				}
+			}
+			cache.gop.Write(p, false)
+		}
 	case av.PacketTypeMetadata:
-		cache.metadata.Write(&p)
+		cache.metadata = p
 	}
-	cache.gop.Write(&p)
 }
 
-func (cache *Cache) Send(w av.WriteCloser) error {
-	if err := cache.metadata.Send(w); err != nil {
-		return err
+// Send ...
+func (cache *Cache) Send(inputChan chan<- *av.Packet) error {
+	cachePkts := make([]*av.Packet, 3)
+	cachePkts = cachePkts[:0]
+	if cache.metadata != nil {
+		cachePkts = append(cachePkts, cache.metadata)
+	}
+	if cache.videoSeq != nil {
+		cachePkts = append(cachePkts, cache.videoSeq)
+	}
+	if cache.audioSeq != nil {
+		cachePkts = append(cachePkts, cache.audioSeq)
 	}
 
-	if err := cache.videoSeq.Send(w); err != nil {
-		return err
+	// 发送sequence header
+	for _, pkt := range cachePkts {
+		select {
+		case inputChan <- pkt:
+		default:
+			return errors.New("send sequence failed")
+		}
 	}
 
-	if err := cache.audioSeq.Send(w); err != nil {
-		return err
+	// 发送视频帧
+	for _, pkt := range cache.gop.gops {
+		select {
+		case inputChan <- pkt:
+		default:
+		}
 	}
-
-	if err := cache.gop.Send(w); err != nil {
-		return err
-	}
-
 	return nil
 }

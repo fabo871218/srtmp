@@ -38,31 +38,27 @@ func (codeParser *CodecParser) SampleRate() (int, error) {
 func (codeParser *CodecParser) Parse(p *av.Packet, w io.Writer) (err error) {
 	switch p.PacketType {
 	case av.PacketTypeVideo:
-		f, ok := p.Header.(av.VideoPacketHeader)
-		if ok {
-			if f.CodecID == av.VIDEO_H264 {
-				if codeParser.h264 == nil {
-					codeParser.h264 = h264.NewParser()
-				}
-				isSeq := f.FrameType == av.FRAME_KEY && f.AVCPacketType == av.AVC_SEQHDR
-				err = codeParser.h264.Parse(p.Data, isSeq, w)
+
+		if p.VHeader.CodecID == av.VIDEO_H264 {
+			if codeParser.h264 == nil {
+				codeParser.h264 = h264.NewParser()
 			}
+			isSeq := p.VHeader.FrameType == av.FRAME_KEY && p.VHeader.AVCPacketType == av.AVC_SEQHDR
+			err = codeParser.h264.Parse(p.Data, isSeq, w)
 		}
+
 	case av.PacketTypeAudio:
-		f, ok := p.Header.(av.AudioPacketHeader)
-		if ok {
-			switch f.SoundFormat {
-			case av.SOUND_AAC:
-				if codeParser.aac == nil {
-					codeParser.aac = aac.NewParser()
-				}
-				err = codeParser.aac.Parse(p.Data, f.AACPacketType, w)
-			case av.SOUND_MP3:
-				if codeParser.mp3 == nil {
-					codeParser.mp3 = mp3.NewParser()
-				}
-				err = codeParser.mp3.Parse(p.Data)
+		switch p.AHeader.SoundFormat {
+		case av.SOUND_AAC:
+			if codeParser.aac == nil {
+				codeParser.aac = aac.NewParser()
 			}
+			err = codeParser.aac.Parse(p.Data, p.AHeader.AACPacketType, w)
+		case av.SOUND_MP3:
+			if codeParser.mp3 == nil {
+				codeParser.mp3 = mp3.NewParser()
+			}
+			err = codeParser.mp3.Parse(p.Data)
 		}
 	default:
 		err = fmt.Errorf("Unknow packet type:%d", p.PacketType)

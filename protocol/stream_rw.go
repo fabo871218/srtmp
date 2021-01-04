@@ -129,7 +129,7 @@ func (sw *StreamWriter) Write(p *av.Packet) (err error) {
 
 	if p.PacketType == av.PacketTypeVideo {
 		if sw.keyframeNeed {
-			if !p.Header.IsKeyFrame() {
+			if p.VHeader.FrameType != av.FRAME_KEY {
 				sw.logger.Warn("Key frame need.")
 				return
 			}
@@ -140,7 +140,7 @@ func (sw *StreamWriter) Write(p *av.Packet) (err error) {
 	select {
 	case sw.packetQueue <- p:
 	default:
-		if p.PacketType == av.PacketTypeVideo && p.Header.IsKeyFrame() {
+		if p.PacketType == av.PacketTypeVideo && p.VHeader.FrameType == av.FRAME_KEY {
 			sw.keyframeNeed = true
 		}
 		sw.logger.Warn("packet droped...")

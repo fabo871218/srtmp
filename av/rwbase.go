@@ -42,14 +42,10 @@ func (rw *RWBaser) RecTimeStamp(timestamp, typeID uint32) {
 }
 
 func (rw *RWBaser) SetPreTime() {
-	rw.lock.Lock()
 	rw.PreTime = time.Now()
-	rw.lock.Unlock()
 }
 
 func (rw *RWBaser) Alive() bool {
-	rw.lock.Lock()
 	b := !(time.Now().Sub(rw.PreTime) >= rw.timeout)
-	rw.lock.Unlock()
 	return b
 }

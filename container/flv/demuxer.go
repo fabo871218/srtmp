@@ -26,7 +26,7 @@ func (d *Demuxer) DemuxH(p *av.Packet) (err error) {
 		if _, err = tag.ParseAudioHeader(p.Data); err != nil {
 			return
 		}
-		p.Header = av.AudioPacketHeader{
+		p.AHeader = av.AudioPacketHeader{
 			SoundFormat:   tag.mediat.soundFormat,
 			SoundRate:     tag.mediat.soundRate,
 			SoundSize:     tag.mediat.soundSize,
@@ -37,7 +37,7 @@ func (d *Demuxer) DemuxH(p *av.Packet) (err error) {
 		if _, err = tag.ParseVideoHeader(p.Data); err != nil {
 			return
 		}
-		p.Header = av.VideoPacketHeader{
+		p.VHeader = av.VideoPacketHeader{
 			FrameType:       tag.mediat.frameType,
 			AVCPacketType:   tag.mediat.avcPacketType,
 			CodecID:         tag.mediat.codecID,
@@ -61,7 +61,7 @@ func (d *Demuxer) Demux(p *av.Packet) (err error) {
 		if n, err = tag.ParseAudioHeader(p.Data); err != nil {
 			return
 		}
-		p.Header = av.AudioPacketHeader{
+		p.AHeader = av.AudioPacketHeader{
 			SoundFormat:   tag.mediat.soundFormat,
 			SoundRate:     tag.mediat.soundRate,
 			SoundSize:     tag.mediat.soundSize,
@@ -72,7 +72,7 @@ func (d *Demuxer) Demux(p *av.Packet) (err error) {
 		if n, err = tag.ParseVideoHeader(p.Data); err != nil {
 			return
 		}
-		p.Header = av.VideoPacketHeader{
+		p.VHeader = av.VideoPacketHeader{
 			FrameType:       tag.mediat.frameType,
 			AVCPacketType:   tag.mediat.avcPacketType,
 			CodecID:         tag.mediat.codecID,

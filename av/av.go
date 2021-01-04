@@ -92,13 +92,15 @@ type Packet struct {
 	PacketType uint32 // packet类型
 	TimeStamp  uint32 // dts
 	StreamID   uint32
-	Header     PacketHeader
+	VHeader    VideoPacketHeader
+	AHeader    AudioPacketHeader
 	Data       []byte
 }
 
 //PacketHeader comment
 type PacketHeader interface {
-	IsKeyFrame() bool
+	IsKeyFrame() bool // 是否是关键帧
+	IsSeqHdr() bool   // 是否是sequence header
 }
 
 //AudioPacketHeader comment
@@ -110,7 +112,17 @@ type AudioPacketHeader struct {
 	AACPacketType uint8
 }
 
+// IsKeyFrame ...
 func (ah AudioPacketHeader) IsKeyFrame() bool {
+	return false
+}
+
+// IsSeqHdr ...
+func (ah AudioPacketHeader) IsSeqHdr() bool {
+	// 目前只处理aac的sequence header
+	if ah.SoundFormat == av.AAC_RAW && ah.AACPacketType == av.AAC_SEQHDR {
+		return true
+	}
 	return false
 }
 
@@ -122,11 +134,20 @@ type VideoPacketHeader struct {
 	CompositionTime int32
 }
 
+// IsKeyFrame 判断是否是关键帧，针对视频帧
 func (vh VideoPacketHeader) IsKeyFrame() bool {
 	if vh.CodecID == av.VIDEO_H264 {
 		return vh.FrameType == av.FRAME_KEY && vh.AVCPacketType == av.AVC_NALU
 	}
 	return vh.FrameType == av.FRAME_KEY
+}
+
+// IsSeqHdr 只判断h264的sequence header
+func (vh VideoPacketHeader) IsSeqHdr() bool {
+	if vh.CodecID == av.VIDEO_H264 && vh.AVCPacketType == av.AVC_SEQHDR {
+		return true
+	}
+	return false
 }
 
 type Demuxer interface {

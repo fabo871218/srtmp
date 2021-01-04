@@ -90,17 +90,12 @@ func (c *RtmpClient) SendPacket(pkt *av.Packet) error {
 }
 
 func (c *RtmpClient) sendAudioPacket(pkt *av.Packet) error {
-	ah, ok := pkt.Header.(av.AudioPacketHeader)
-	if ok == false {
-		return fmt.Errorf("audio pkt.Header should be av.AudioPacketHeader")
-	}
-
 	var err error
-	if ah.SoundFormat == av.SOUND_AAC && c.audioFirst {
+	if pkt.AHeader.SoundFormat == av.SOUND_AAC && c.audioFirst {
 		//如果音频是aac，需要先发送aac sequence header
 		sequencePkt := &av.Packet{
 			PacketType: av.PacketTypeAudio,
-			Data:       flv.NewAACSequenceHeader(ah),
+			Data:       flv.NewAACSequenceHeader(pkt.AHeader),
 			TimeStamp:  pkt.TimeStamp,
 		}
 		if err = c.sendPacketData(sequencePkt.Data, sequencePkt.TimeStamp,
@@ -110,7 +105,7 @@ func (c *RtmpClient) sendAudioPacket(pkt *av.Packet) error {
 		c.audioFirst = false
 	}
 
-	if pkt.Data, err = flv.PackAudioData(&ah, pkt.StreamID, pkt.Data,
+	if pkt.Data, err = flv.PackAudioData(&pkt.AHeader, pkt.StreamID, pkt.Data,
 		pkt.TimeStamp); err != nil {
 		return fmt.Errorf("Pack audio failed. %v", err)
 	}
@@ -121,13 +116,8 @@ func (c *RtmpClient) sendAudioPacket(pkt *av.Packet) error {
 }
 
 func (c *RtmpClient) sendVideoPacket(pkt *av.Packet) error {
-	vh, ok := pkt.Header.(av.VideoPacketHeader)
-	if ok == false {
-		return fmt.Errorf("video pkt.Header should be av.VideoPacketHeader")
-	}
-
 	var err error
-	if vh.CodecID == av.VIDEO_H264 {
+	if pkt.VHeader.CodecID == av.VIDEO_H264 {
 		// 如果是h264，第一帧要发送sequence header
 		if c.videoFirst {
 			var sps, pps []byte
@@ -158,7 +148,7 @@ func (c *RtmpClient) sendVideoPacket(pkt *av.Packet) error {
 			c.videoFirst = false
 		}
 	}
-	if pkt.Data, err = flv.PackVideoData(&vh, pkt.StreamID, pkt.Data,
+	if pkt.Data, err = flv.PackVideoData(&pkt.VHeader, pkt.StreamID, pkt.Data,
 		pkt.TimeStamp); err != nil {
 		return fmt.Errorf("Pack video failed, %v", err)
 	}
@@ -235,14 +225,10 @@ func (c *RtmpClient) handleVideoAudio(cs *core.ChunkStream) error {
 	case av.PacketTypeAudio: //处理音频数据
 		c.onPacketReceive(&pkt)
 	case av.PacketTypeVideo: //处理视频数据
-		vh, ok := pkt.Header.(av.VideoPacketHeader)
-		if ok == false {
-			return fmt.Errorf("cannot convert from pkt.Header to av.VideoPacketHeader")
-		}
-		switch vh.CodecID {
+		switch pkt.VHeader.CodecID {
 		case av.VIDEO_H264:
 			// 如果是h264的sequence header，需要解析出sps和pps
-			if vh.FrameType == av.FRAME_KEY && vh.AVCPacketType == av.AVC_SEQHDR {
+			if pkt.VHeader.FrameType == av.FRAME_KEY && pkt.VHeader.AVCPacketType == av.AVC_SEQHDR {
 				spss, ppss, err := flv.ParseAVCSequenceHeader(pkt.Data)
 				if err != nil {
 					return fmt.Errorf("Parse avc sequence header failed, %v", err)

@@ -13,12 +13,7 @@ import (
 var startCode []byte = []byte{0x00, 0x00, 0x00, 0x01}
 
 func handleVideoPacket(pkt *av.Packet) {
-	vh, ok := pkt.Header.(av.VideoPacketHeader)
-	if ok == false {
-		return
-	}
-
-	switch vh.CodecID {
+	switch pkt.VHeader.CodecID {
 	case av.VIDEO_H264:
 		fmt.Printf("receive h264 pkt... %s\n", hex.EncodeToString(pkt.Data[:4]))
 		naluType := pkt.Data[0] & 0x1F
@@ -30,17 +25,13 @@ func handleVideoPacket(pkt *av.Packet) {
 			//忽略
 		}
 	case av.VIDEO_JPEG:
+		fmt.Println("receive jpeg pkt... ", len(pkt.Data))
 	default:
 	}
 }
 
 func handleAudioPacket(pkt *av.Packet) {
-	ah, ok := pkt.Header.(av.AudioPacketHeader)
-	if ok == false {
-		return
-	}
-
-	fmt.Printf("receive audio packet:%d\n", ah.SoundFormat)
+	fmt.Printf("receive audio packet:%d\n", pkt.AHeader.SoundFormat)
 }
 
 func handleMetaPacket(pkt *av.Packet) {

@@ -33,26 +33,17 @@ func NewCache() *Cache {
 func (cache *Cache) Write(p *av.Packet) {
 	switch p.PacketType {
 	case av.PacketTypeAudio:
-		ah, ok := p.Header.(av.AudioPacketHeader)
-		if ok == false {
-			return
-		}
 		// 目前只处理aac的sequence header，如果后续要支持更多的格式
 		// 可在此添加
-		if ah.SoundFormat == av.SOUND_AAC && ah.AACPacketType == av.AAC_SEQHDR {
+		if p.AHeader.SoundFormat == av.SOUND_AAC && p.AHeader.AACPacketType == av.AAC_SEQHDR {
 			cache.audioSeq = p
 			return
 		}
 	case av.PacketTypeVideo:
-		vh, ok := p.Header.(av.VideoPacketHeader)
-		if ok == false {
-			return
-		}
-
 		// 这里目前只处理h264的sequence和gop缓存
-		if vh.CodecID == av.VIDEO_H264 {
-			if vh.FrameType == av.FRAME_KEY {
-				if vh.AVCPacketType == av.AVC_SEQHDR {
+		if p.VHeader.CodecID == av.VIDEO_H264 {
+			if p.VHeader.FrameType == av.FRAME_KEY {
+				if p.VHeader.AVCPacketType == av.AVC_SEQHDR {
 					cache.videoSeq = p
 				} else {
 					cache.gop.Write(p, true)

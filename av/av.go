@@ -2,8 +2,6 @@ package av
 
 import (
 	"io"
-
-	"registry.code.tuya-inc.top/jiangfb/srtmp/av"
 )
 
 const (
@@ -97,12 +95,6 @@ type Packet struct {
 	Data       []byte
 }
 
-//PacketHeader comment
-type PacketHeader interface {
-	IsKeyFrame() bool // 是否是关键帧
-	IsSeqHdr() bool   // 是否是sequence header
-}
-
 //AudioPacketHeader comment
 type AudioPacketHeader struct {
 	SoundFormat   uint8
@@ -112,42 +104,12 @@ type AudioPacketHeader struct {
 	AACPacketType uint8
 }
 
-// IsKeyFrame ...
-func (ah AudioPacketHeader) IsKeyFrame() bool {
-	return false
-}
-
-// IsSeqHdr ...
-func (ah AudioPacketHeader) IsSeqHdr() bool {
-	// 目前只处理aac的sequence header
-	if ah.SoundFormat == av.AAC_RAW && ah.AACPacketType == av.AAC_SEQHDR {
-		return true
-	}
-	return false
-}
-
 //VideoPacketHeader ...
 type VideoPacketHeader struct {
 	FrameType       uint8
 	AVCPacketType   uint8
 	CodecID         uint8
 	CompositionTime int32
-}
-
-// IsKeyFrame 判断是否是关键帧，针对视频帧
-func (vh VideoPacketHeader) IsKeyFrame() bool {
-	if vh.CodecID == av.VIDEO_H264 {
-		return vh.FrameType == av.FRAME_KEY && vh.AVCPacketType == av.AVC_NALU
-	}
-	return vh.FrameType == av.FRAME_KEY
-}
-
-// IsSeqHdr 只判断h264的sequence header
-func (vh VideoPacketHeader) IsSeqHdr() bool {
-	if vh.CodecID == av.VIDEO_H264 && vh.AVCPacketType == av.AVC_SEQHDR {
-		return true
-	}
-	return false
 }
 
 type Demuxer interface {

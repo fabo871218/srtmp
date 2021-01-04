@@ -146,7 +146,6 @@ func main() {
 			time.Sleep(time.Second * 1)
 		}
 	}()
-
 	api := srtmp.NewAPI()
 	addr := fmt.Sprintf(":%d", *port)
 	if err := api.ServeRtmp(addr); err != nil {

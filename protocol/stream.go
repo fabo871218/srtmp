@@ -1,16 +1,18 @@
 package protocol
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/fabo871218/srtmp/av"
 	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/protocol/cache"
+	"github.com/fabo871218/srtmp/utils"
 )
 
-type StreamInfo1 struct {
-	Key  string
+// StreamInfo ...
+type StreamInfo struct {
 	App  string
 	Name string
 	URL  string
@@ -23,7 +25,7 @@ type RtmpStream struct {
 	cache      *cache.Cache
 	reader     ReadCloser
 	writers    []WriteCloser
-	streamInfo StreamInfo1
+	streamInfo StreamInfo
 
 	pktChan       chan *av.Packet
 	writerChan    chan WriteCloser
@@ -44,8 +46,9 @@ func (p *PackWriterCloser) NewWriter() (WriteCloser, error) {
 }
 
 //NewStream 创建新的rtmp流
-func NewStream(streamInfo StreamInfo1, handler *StreamHandler, log logger.Logger) *RtmpStream {
+func NewStream(streamInfo StreamInfo, handler *StreamHandler, log logger.Logger) *RtmpStream {
 	return &RtmpStream{
+		streamID:      utils.NewId(),
 		streamInfo:    streamInfo,
 		cache:         cache.NewCache(),
 		streamHandler: handler,
@@ -88,7 +91,7 @@ func (s *RtmpStream) AddWriter(w WriteCloser) error {
 
 //开始读取流数据
 func (s *RtmpStream) startRead(wg *sync.WaitGroup) {
-	s.logger.Infof("Start ot read data, name:%s", s.streamInfo.Key)
+	s.logger.Infof("Start to read data, id:%s", s.streamID)
 	wg.Add(1)
 	defer wg.Done()
 	for {
@@ -97,7 +100,6 @@ func (s *RtmpStream) startRead(wg *sync.WaitGroup) {
 			s.logger.Errorf("Read pkt failed, %s", err.Error())
 			return
 		}
-
 		//先缓存数据包
 		s.cache.Write(pkt)
 		select {
@@ -109,13 +111,14 @@ func (s *RtmpStream) startRead(wg *sync.WaitGroup) {
 
 //转发流数据
 func (s *RtmpStream) streamLoop() {
-	s.logger.Infof("Start stream loop, %s", s.streamInfo.Key)
+	s.logger.Infof("Start stream loop, %s", s.streamID)
 	checkTicker := time.NewTicker(time.Second * 30)
 	defer func() {
-		s.streamHandler.remove(s.streamInfo.Key)
+		streamKey := fmt.Sprintf("%s_%s", s.streamInfo.App, s.streamInfo.Name)
+		s.streamHandler.remove(streamKey)
 		s.close()
 		checkTicker.Stop()
-		s.logger.Infof("Rtmp stream[%s] exit.", s.streamInfo.Key)
+		s.logger.Infof("Rtmp stream[%s] exit.", s.streamID)
 	}()
 
 	var wg sync.WaitGroup

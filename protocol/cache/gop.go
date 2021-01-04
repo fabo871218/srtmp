@@ -15,7 +15,7 @@ type GopCache struct {
 func NewGopCache(maxNumber int) *GopCache {
 	return &GopCache{
 		count: 0,
-		gops:  make([]*av.Packet, maxNumber),
+		gops:  make([]*av.Packet, 0),
 	}
 }
 
@@ -26,6 +26,8 @@ func (gc *GopCache) Write(p *av.Packet, bKeyFrame bool) {
 	}
 
 	// todo 是否需要拷贝
-	gc.gops = append(gc.gops, p)
-	gc.count++
+	if gc.count < gc.maxNumber {
+		gc.gops = append(gc.gops, p)
+		gc.count++
+	}
 }

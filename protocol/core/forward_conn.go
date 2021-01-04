@@ -85,7 +85,7 @@ type ForwardConnect struct {
 func NewForwardConnect(conn *RtmpConn, log logger.Logger) *ForwardConnect {
 	return &ForwardConnect{
 		conn:     conn,
-		streamID: 1,
+		streamID: 1, //todo
 		bytesw:   bytes.NewBuffer(nil),
 		decoder:  &amf.Decoder{},
 		encoder:  &amf.Encoder{},

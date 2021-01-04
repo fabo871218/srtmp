@@ -74,7 +74,7 @@ func main() {
 		}
 		//fmt.Println(len(pkt.Data))
 	}, func() {
-		//fmt.Println("Closed...")
+		fmt.Println("Closed...")
 	})
 	if err != nil {
 		panic(err)

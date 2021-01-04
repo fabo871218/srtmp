@@ -33,7 +33,6 @@ func (s *Server) Serve(listenAddr string) (err error) {
 			s.logger.Errorf("rtmp server panic:%v", r)
 		}
 	}()
-
 	var listener net.Listener
 	listener, err = net.Listen("tcp", listenAddr)
 	if err != nil {

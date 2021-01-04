@@ -3,14 +3,12 @@ package protocol
 import (
 	"errors"
 	"fmt"
-	"reflect"
 	"time"
 
 	"github.com/fabo871218/srtmp/av"
 	"github.com/fabo871218/srtmp/container/flv"
 	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/protocol/core"
-	"github.com/fabo871218/srtmp/utils"
 )
 
 const (
@@ -50,7 +48,7 @@ type StaticsBW struct {
 //StreamWriter 是代表rtmp连接的写入对象
 type StreamWriter struct {
 	av.RWBaser
-	UID          string
+	streamID     string
 	closed       bool
 	keyframeNeed bool
 	conn         *core.ForwardConnect
@@ -60,9 +58,9 @@ type StreamWriter struct {
 }
 
 //NewStreamWriter 创建一个新的写入对象
-func NewStreamWriter(conn *core.ForwardConnect, log logger.Logger) *StreamWriter {
+func NewStreamWriter(conn *core.ForwardConnect, streamID string, log logger.Logger) *StreamWriter {
 	writer := &StreamWriter{
-		UID:          utils.NewId(),
+		streamID:     streamID,
 		conn:         conn,
 		RWBaser:      av.NewRWBaser(time.Second * 10),
 		packetQueue:  make(chan *av.Packet, maxQueueNum),
@@ -135,7 +133,7 @@ func (sw *StreamWriter) Write(p *av.Packet) (err error) {
 				sw.logger.Warn("Key frame need.")
 				return
 			}
-			sw.keyframeNeed = true
+			sw.keyframeNeed = false
 		}
 	}
 
@@ -152,7 +150,6 @@ func (sw *StreamWriter) Write(p *av.Packet) (err error) {
 
 //SendPacket todo comment
 func (sw *StreamWriter) SendPacket() error {
-	Flush := reflect.ValueOf(sw.conn).MethodByName("Flush")
 	var cs core.ChunkStream
 	for {
 		p, ok := <-sw.packetQueue
@@ -181,7 +178,7 @@ func (sw *StreamWriter) SendPacket() error {
 				sw.closed = true
 				return err
 			}
-			Flush.Call(nil)
+			sw.conn.Flush()
 		} else {
 			return errors.New("closed")
 		}
@@ -214,7 +211,7 @@ func (sw *StreamWriter) Close() {
 //StreamReader todo comment
 type StreamReader struct {
 	av.RWBaser
-	UID        string
+	streamID   string
 	demuxer    *flv.Demuxer
 	conn       *core.ForwardConnect
 	ReadBWInfo StaticsBW
@@ -222,9 +219,9 @@ type StreamReader struct {
 }
 
 //NewStreamReader 创建一个rtmp连接读对象
-func NewStreamReader(conn *core.ForwardConnect, log logger.Logger) *StreamReader {
+func NewStreamReader(conn *core.ForwardConnect, streamID string, log logger.Logger) *StreamReader {
 	return &StreamReader{
-		UID:        utils.NewId(),
+		streamID:   streamID,
 		conn:       conn,
 		RWBaser:    av.NewRWBaser(time.Second * 10),
 		demuxer:    flv.NewDemuxer(),

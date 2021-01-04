@@ -10,8 +10,6 @@ import (
 
 //StreamHandler 管理RtmpStream，每个RtmpStream代表一路流
 type StreamHandler struct {
-	//streams cmap.ConcurrentMap //key
-
 	mutex   sync.Mutex
 	logger  logger.Logger
 	streams map[string]*RtmpStream
@@ -28,16 +26,19 @@ func NewStreamHandler(log logger.Logger) *StreamHandler {
 
 //get rtmp stream, if not exist, create a new one
 //bool indicate weathe the stream is new, true-new false-not
-func (h *StreamHandler) getOrCreate(streamInfo StreamInfo1) *RtmpStream {
+func (h *StreamHandler) getOrCreate(streamInfo StreamInfo) *RtmpStream {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
-	if stream, ok := h.streams[streamInfo.Key]; ok {
+	streamKey := fmt.Sprintf("%s_%s", streamInfo.App, streamInfo.Name)
+	if stream, ok := h.streams[streamKey]; ok {
 		return stream
 	}
 
 	stream := NewStream(streamInfo, h, h.logger)
-	h.streams[streamInfo.Key] = stream
+	h.streams[streamKey] = stream
 	go stream.streamLoop()
+	h.logger.Infof("Create new stream, id:%s app:%s name:%s", stream.streamID,
+		streamInfo.App, streamInfo.Name)
 	return stream
 }
 
@@ -63,8 +64,7 @@ func (h *StreamHandler) GetStreams() []*RtmpStream {
 // HandleConnect ...
 func (h *StreamHandler) HandleConnect(conn *core.ForwardConnect) error {
 	app, name, url := conn.GetStreamInfo()
-	streamInfo := StreamInfo1{
-		Key:  "", //todo
+	streamInfo := StreamInfo{
 		App:  app,
 		Name: name,
 		URL:  url,
@@ -72,14 +72,14 @@ func (h *StreamHandler) HandleConnect(conn *core.ForwardConnect) error {
 
 	stream := h.getOrCreate(streamInfo)
 	if conn.IsPublisher() {
-		writer := NewStreamWriter(conn, h.logger)
-		if err := stream.AddWriter(writer); err != nil {
-			return fmt.Errorf("Add stream writer failed, %v", err)
-		}
-	} else {
-		reader := NewStreamReader(conn, h.logger)
+		reader := NewStreamReader(conn, stream.ID(), h.logger)
 		if err := stream.AddReader(reader); err != nil {
 			return fmt.Errorf("Add stream reader failed, %v", err)
+		}
+	} else {
+		writer := NewStreamWriter(conn, stream.ID(), h.logger)
+		if err := stream.AddWriter(writer); err != nil {
+			return fmt.Errorf("Add stream writer failed, %v", err)
 		}
 	}
 	return nil

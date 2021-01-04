@@ -3,6 +3,7 @@ package cache
 import (
 	"errors"
 	"flag"
+	"fmt"
 
 	"github.com/fabo871218/srtmp/av"
 )
@@ -82,6 +83,7 @@ func (cache *Cache) Send(inputChan chan<- *av.Packet) error {
 	for _, pkt := range cachePkts {
 		select {
 		case inputChan <- pkt:
+			fmt.Println("Input pkt....")
 		default:
 			return errors.New("send sequence failed")
 		}
@@ -91,6 +93,7 @@ func (cache *Cache) Send(inputChan chan<- *av.Packet) error {
 	for _, pkt := range cache.gop.gops {
 		select {
 		case inputChan <- pkt:
+			fmt.Println("Input pkt....")
 		default:
 		}
 	}

@@ -141,7 +141,8 @@ func (c *RtmpClient) sendVideoPacket(pkt *av.Packet) error {
 			}
 
 			if sps == nil || pps == nil {
-				return fmt.Errorf("sps and pps needed for first packet")
+				c.logger.Warn("sps and pps need for first packet.")
+				return nil
 			}
 			//send flv sequence header
 			sequencePkt := &av.Packet{

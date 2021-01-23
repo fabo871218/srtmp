@@ -43,10 +43,9 @@ func (muxer *Muxer) Mux(p *av.Packet, w io.Writer) error {
 	pts := dts
 	pid := audioPID
 	var videoH av.VideoPacketHeader
-	if p.IsVideo {
+	if p.PacketType == av.PacketTypeVideo {
 		pid = videoPID
-		videoH, _ = p.Header.(av.VideoPacketHeader)
-		pts = dts + int64(videoH.CompositionTime())*int64(h264DefaultHZ)
+		pts = dts + int64(p.VHeader.CompositionTime)*int64(h264DefaultHZ)
 	}
 	err := pes.packet(p, pts, dts)
 	if err != nil {
@@ -59,7 +58,7 @@ func (muxer *Muxer) Mux(p *av.Packet, w io.Writer) error {
 		if packetBytesLen <= 0 {
 			break
 		}
-		if p.IsVideo {
+		if p.PacketType == av.PacketTypeVideo {
 			muxer.videoCc++
 			if muxer.videoCc > 0xf {
 				muxer.videoCc = 0
@@ -89,7 +88,7 @@ func (muxer *Muxer) Mux(p *av.Packet, w io.Writer) error {
 		i++
 
 		//scram control, adaptation control, counter
-		if p.IsVideo {
+		if p.PacketType == av.PacketTypeVideo {
 			muxer.tsPacket[i] = 0x10 | byte(muxer.videoCc&0x0f)
 		} else {
 			muxer.tsPacket[i] = 0x10 | byte(muxer.audioCc&0x0f)
@@ -97,7 +96,8 @@ func (muxer *Muxer) Mux(p *av.Packet, w io.Writer) error {
 		i++
 
 		//关键帧需要加pcr
-		if first && p.IsVideo && videoH.IsKeyFrame() {
+		if first && p.PacketType == av.PacketTypeVideo &&
+			videoH.FrameType == av.FRAME_KEY {
 			muxer.tsPacket[3] |= 0x20
 			muxer.tsPacket[i] = 7
 			i++
@@ -300,7 +300,7 @@ func (header *pesHeader) packet(p *av.Packet, pts, dts int64) error {
 	i++
 
 	sid := audioSID
-	if p.IsVideo {
+	if p.PacketType == av.PacketTypeVideo {
 		sid = videoSID
 	}
 	header.data[i] = byte(sid)
@@ -310,7 +310,7 @@ func (header *pesHeader) packet(p *av.Packet, pts, dts int64) error {
 	ptslen := 5
 	dtslen := ptslen
 	headerSize := ptslen
-	if p.IsVideo && pts != dts {
+	if p.PacketType == av.PacketTypeVideo && pts != dts {
 		flag |= 0x40
 		headerSize += 5 //add dts
 	}
@@ -332,7 +332,7 @@ func (header *pesHeader) packet(p *av.Packet, pts, dts int64) error {
 
 	header.writeTs(header.data[0:], i, flag>>6, pts)
 	i += ptslen
-	if p.IsVideo && pts != dts {
+	if p.PacketType == av.PacketTypeVideo && pts != dts {
 		header.writeTs(header.data[0:], i, 1, dts)
 		i += dtslen
 	}

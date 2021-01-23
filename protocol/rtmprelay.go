@@ -2,10 +2,10 @@ package protocol
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 
+	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/protocol/amf"
 	"github.com/fabo871218/srtmp/protocol/core"
 )
@@ -17,18 +17,19 @@ var (
 type RtmpRelay struct {
 	PlayUrl              string
 	PublishUrl           string
-	cs_chan              chan core.ChunkStream
+	cs_chan              chan *core.ChunkStream
 	sndctrl_chan         chan string
 	connectPlayClient    *core.ConnClient
 	connectPublishClient *core.ConnClient
 	startflag            bool
+	logger               logger.Logger
 }
 
 func NewRtmpRelay(playurl *string, publishurl *string) *RtmpRelay {
 	return &RtmpRelay{
 		PlayUrl:              *playurl,
 		PublishUrl:           *publishurl,
-		cs_chan:              make(chan core.ChunkStream, 500),
+		cs_chan:              make(chan *core.ChunkStream, 500),
 		sndctrl_chan:         make(chan string),
 		connectPlayClient:    nil,
 		connectPublishClient: nil,
@@ -39,14 +40,12 @@ func NewRtmpRelay(playurl *string, publishurl *string) *RtmpRelay {
 func (self *RtmpRelay) rcvPlayChunkStream() {
 	fmt.Printf("rcvPlayRtmpMediaPacket connectClient.Read...\n")
 	for {
-		var rc core.ChunkStream
-
 		if self.startflag == false {
 			self.connectPlayClient.Close()
 			fmt.Printf("rcvPlayChunkStream close: playurl=%s, publishurl=%s\n", self.PlayUrl, self.PublishUrl)
 			break
 		}
-		err := self.connectPlayClient.Read(&rc)
+		rc, err := self.connectPlayClient.Read()
 
 		if err != nil && err == io.EOF {
 			break
@@ -82,16 +81,16 @@ func (self *RtmpRelay) sendPublishChunkStream() {
 	}
 }
 
+//Start ...
 func (self *RtmpRelay) Start() error {
 	if self.startflag {
-		err := errors.New(fmt.Sprintf("The rtmprelay already started, playurl=%s, publishurl=%s", self.PlayUrl, self.PublishUrl))
-		return err
+		return fmt.Errorf("The rtmprelay already started, playurl=%s, publishurl=%s", self.PlayUrl, self.PublishUrl)
 	}
 
-	self.connectPlayClient = core.NewConnClient()
-	self.connectPublishClient = core.NewConnClient()
+	self.connectPlayClient = core.NewConnClient(self.logger)
+	self.connectPublishClient = core.NewConnClient(self.logger)
 
-	fmt.Printf("play server addr:%v starting....\n", self.PlayUrl)
+	self.logger.Debugf("Play server addr:%s starting....", self.PlayUrl)
 	err := self.connectPlayClient.Start(self.PlayUrl, "play")
 	if err != nil {
 		fmt.Printf("connectPlayClient.Start url=%v error\n", self.PlayUrl)

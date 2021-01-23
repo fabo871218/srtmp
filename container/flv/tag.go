@@ -1,7 +1,11 @@
 package flv
 
 import (
+	"bytes"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/fabo871218/srtmp/av"
 	"github.com/fabo871218/srtmp/media/aac"
@@ -18,6 +22,17 @@ type flvTag struct {
 }
 
 /*
+flv 格式
+Header|PreviousTagSize0|Tag1|PreviousTagSize1|Tag2|PreviousTagSize2|...|TagN|PreviousTagSizeN|
+Header
+* Signature(3Byte) 固定为f l v三个字符
+* Version(3Byte) 一般为1
+* Flags(1Byte) 第0位和第2位分别表示video和audio存在的情况(1存在，0不存在)
+* DataOffet(4Byte) 表示flv文件header的长度
+
+Body由一系列的Tag和size组成，tag分为video，audio和script，
+tag格式 tag type|tag data size|timestamp|timestamp extended|stream id|tag data
+
 script tag 存放flv的MetaData信息，比如duration，audiodatarate，creator，width等信息
 
 video tag
@@ -203,64 +218,8 @@ type Tag struct {
 	mediat mediaTag
 }
 
-//SoundFormat comment
-func (tag *Tag) SoundFormat() uint8 {
-	return tag.mediat.soundFormat
-}
-
-//SoundRate comment
-func (tag *Tag) SoundRate() uint8 {
-	return tag.mediat.soundRate
-}
-
-//SoundSize commnet
-func (tag *Tag) SoundSize() uint8 {
-	return tag.mediat.soundSize
-}
-
-//SoundType comment
-func (tag *Tag) SoundType() uint8 {
-	return tag.mediat.soundType
-}
-
-//AACPacketType comment
-func (tag *Tag) AACPacketType() uint8 {
-	return tag.mediat.aacPacketType
-}
-
-//IsKeyFrame comment
-func (tag *Tag) IsKeyFrame() bool {
-	return tag.mediat.frameType == av.FRAME_KEY
-}
-
-//IsSeq comment
-func (tag *Tag) IsSeq() bool {
-	return tag.mediat.frameType == av.FRAME_KEY &&
-		tag.mediat.avcPacketType == av.AVC_SEQHDR
-}
-
-//CodecID comment
-func (tag *Tag) CodecID() uint8 {
-	return tag.mediat.codecID
-}
-
-//CompositionTime comment
-func (tag *Tag) CompositionTime() int32 {
-	return tag.mediat.compositionTime
-}
-
-//ParseMeidaTagHeader parse video, audio, tag header
-func (tag *Tag) ParseMeidaTagHeader(b []byte, isVideo bool) (n int, err error) {
-	switch isVideo {
-	case false:
-		n, err = tag.parseAudioHeader(b)
-	case true:
-		n, err = tag.parseVideoHeader(b)
-	}
-	return
-}
-
-func (tag *Tag) parseAudioHeader(b []byte) (n int, err error) {
+//ParseAudioHeader ...
+func (tag *Tag) ParseAudioHeader(b []byte) (n int, err error) {
 	if len(b) < n+1 {
 		err = fmt.Errorf("invalid audiodata len=%d", len(b))
 		return
@@ -279,7 +238,8 @@ func (tag *Tag) parseAudioHeader(b []byte) (n int, err error) {
 	return
 }
 
-func (tag *Tag) parseVideoHeader(b []byte) (n int, err error) {
+//ParseVideoHeader ...
+func (tag *Tag) ParseVideoHeader(b []byte) (n int, err error) {
 	if len(b) < n+5 {
 		err = fmt.Errorf("invalid videodata len=%d", len(b))
 		return
@@ -338,6 +298,79 @@ func NewAVCSequenceHeader(sps, pps []byte, timeStamp uint32) []byte {
 	return buffer[:index]
 }
 
+//ParseAVCSequenceHeader 解析sps和pps
+func ParseAVCSequenceHeader(data []byte) (spss, ppss [][]byte, err error) {
+	reader := bytes.NewReader(data)
+
+	var rb byte
+	if rb, err = reader.ReadByte(); err != nil {
+		err = fmt.Errorf("read version failed, %v", err)
+		return
+	}
+	//校验version，应该为1
+	if rb != 0x01 {
+		err = errors.New("version should be 0x01")
+		return
+	}
+
+	//读取接下来三个字节, 分别为avcProfileIndication, profileCompatility, avcLevelIndication
+	var apa [3]byte
+	if _, err = reader.Read(apa[0:]); err != nil {
+		err = fmt.Errorf("read apa failed, %v", err)
+		return
+	}
+
+	//跳过一个字节
+	if _, err = reader.Seek(1, io.SeekCurrent); err != nil {
+		err = fmt.Errorf("reader.Seek failed, %v", err)
+		return
+	}
+
+	if rb, err = reader.ReadByte(); err != nil {
+		err = fmt.Errorf("read number of sps failed, %v", err)
+		return
+	}
+
+	numberOfsps := int(rb & 0x1f)
+	for i := 0; i < numberOfsps; i++ {
+		var lengthBytes [2]byte
+		if _, err = reader.Read(lengthBytes[0:]); err != nil {
+			err = fmt.Errorf("read sps length failed, %v", err)
+			return
+		}
+		length := binary.BigEndian.Uint16(lengthBytes[0:])
+		sps := make([]byte, length)
+		if _, err = reader.Read(sps[0:]); err != nil {
+			err = fmt.Errorf("read sps failed, %v", err)
+			return
+		}
+		spss = append(spss, sps)
+	}
+
+	//读取pps长度
+	if rb, err = reader.ReadByte(); err != nil {
+		err = fmt.Errorf("read number of sps failed, %v", err)
+		return
+	}
+
+	numberOfpps := int(rb)
+	for i := 0; i < numberOfpps; i++ {
+		var lengthBytes [2]byte
+		if _, err = reader.Read(lengthBytes[0:]); err != nil {
+			err = fmt.Errorf("read sps length failed, %v", err)
+			return
+		}
+		length := binary.BigEndian.Uint16(lengthBytes[0:])
+		pps := make([]byte, length)
+		if _, err = reader.Read(pps[0:]); err != nil {
+			err = fmt.Errorf("read sps failed, %v", err)
+			return
+		}
+		ppss = append(ppss, pps)
+	}
+	return
+}
+
 //NewAACSequenceHeader comment
 func NewAACSequenceHeader(ah av.AudioPacketHeader) []byte {
 	var (
@@ -347,7 +380,7 @@ func NewAACSequenceHeader(ah av.AudioPacketHeader) []byte {
 	)
 
 	objectType = 2 //AAC_LC
-	switch ah.SoundRate() {
+	switch ah.SoundRate {
 	case av.SOUND_RATE_5_5Khz, av.SOUND_RATE_7Khz:
 		samplingFrequenceIndex = 4 //不支持5.5kHz, 7Khz
 	case av.SOUND_RATE_8Khz:
@@ -378,9 +411,9 @@ func NewAACSequenceHeader(ah av.AudioPacketHeader) []byte {
 		samplingFrequenceIndex = 4
 	}
 
-	if ah.SoundType() == av.SOUND_MONO {
+	if ah.SoundType == av.SOUND_MONO {
 		channelConfiguration = 1
-	} else if ah.SoundType() == av.SOUND_STEREO {
+	} else if ah.SoundType == av.SOUND_STEREO {
 		channelConfiguration = 2
 	} else {
 		channelConfiguration = 2
@@ -395,10 +428,10 @@ func NewAACSequenceHeader(ah av.AudioPacketHeader) []byte {
 			// streamID:        0,
 		},
 		mediat: mediaTag{
-			soundFormat:   ah.SoundFormat(), //aac
-			soundRate:     ah.SoundRate(),   //44KHz
-			soundSize:     ah.SoundSize(),
-			soundType:     ah.SoundType(), //单声道
+			soundFormat:   ah.SoundFormat, //aac
+			soundRate:     ah.SoundRate,   //44KHz
+			soundSize:     ah.SoundSize,
+			soundType:     ah.SoundType, //单声道
 			aacPacketType: av.AAC_SEQHDR,
 		},
 	}
@@ -413,57 +446,90 @@ func NewAACSequenceHeader(ah av.AudioPacketHeader) []byte {
 	return buffer[:index]
 }
 
-//NewAVCNaluData 把nalu单元打包成rtmp的payload
-func NewAVCNaluData(src []byte, timeStamp uint32) (buffer []byte) {
-	//nalu单元至少要大于4个字节，包括start code（一帧开始的起始码应该是4位）
-	if len(src) <= 4 {
-		buffer = make([]byte, 0)
-		return
+// PackVideoData 打包音数据到buffer中，按照flv的video tag的格式打包
+func PackVideoData(header *av.VideoPacketHeader, streamID uint32, src []byte,
+	timeStamp uint32) ([]byte, error) {
+	var tag *Tag
+	switch header.CodecID {
+	case av.VIDEO_H264:
+		if len(src) >= 4 && bytes.Compare(src[0:4], h264.StartCode4) == 0 {
+			src = src[4:]
+		}
+
+		if len(src) == 0 {
+			return nil, fmt.Errorf("invalid data")
+		}
+		//获取naluType类型
+		frameType := uint8(av.FRAME_INTER)
+		naluType := src[0] & 0x1F
+		if naluType == 7 || naluType == 8 || naluType == 5 {
+			frameType = uint8(av.FRAME_KEY)
+		}
+		tag = &Tag{
+			flvt: flvTag{
+				fType:           av.TAG_VIDEO,
+				dataSize:        uint32(len(src)), //在用rtmp协议发送是，改字段好像不起作用，正常情况是后面mediaTag+数据的长度
+				timeStamp:       timeStamp,
+				timeStampExtend: 0, // todo
+				streamID:        0, // todo
+			},
+			mediat: mediaTag{
+				frameType:       frameType,
+				codecID:         header.CodecID,
+				avcPacketType:   header.AVCPacketType,
+				compositionTime: 0, // todo
+			},
+		}
+	case av.VIDEO_JPEG, av.VideoH263:
+		tag = &Tag{
+			flvt: flvTag{
+				fType:           av.TAG_VIDEO,
+				dataSize:        uint32(len(src)),
+				timeStamp:       timeStamp,
+				timeStampExtend: 0, // todo 这个需要处理一下
+				streamID:        0, //todo 这个需要设置
+			},
+			mediat: mediaTag{
+				frameType:       av.FRAME_KEY, //jpeg都认为是key frame
+				codecID:         header.CodecID,
+				avcPacketType:   0, // jpeg，这个字段不起作用
+				compositionTime: 0, // jpeg，这个字段不起作用
+			},
+		}
+	default:
+		return nil, fmt.Errorf("unsupport code id:%d", header.CodecID)
 	}
-	//获取naluType类型
-	frameType := uint8(av.FRAME_INTER)
-	naluType := src[4] & 0x1F
-	if naluType == 7 || naluType == 8 || naluType == 5 {
-		frameType = uint8(av.FRAME_KEY)
-	}
-	tag := &Tag{
-		flvt: flvTag{
-			fType:           av.TAG_VIDEO,
-			dataSize:        uint32(len(src)), //在用rtmp协议发送是，改字段好像不起作用，正常情况是后面mediaTag+数据的长度
-			timeStamp:       timeStamp,
-			timeStampExtend: 0,
-			streamID:        0,
-		},
-		mediat: mediaTag{
-			frameType:       frameType,
-			codecID:         av.VIDEO_H264,
-			avcPacketType:   av.AVC_NALU,
-			compositionTime: 0,
-		},
-	}
+
+	index := 0
 	//生成tagHeader 部分
 	tagBuffer := muxerTagData(tag)
-	index := 0
-	if naluType == 7 || naluType == 8 {
-		//如果是7或8，应该是I帧，把里面的nalu单元都提取出来，打包
-		//naluLength nalu naluLength nalu
-		nalus := h264.ParseNalusN(src, 3)
-		buffer = make([]byte, len(tagBuffer)+len(src)+len(nalus)*4)
-		copy(buffer[index:], tagBuffer)
-		index += len(tagBuffer)
-		for _, nalu := range nalus {
-			if len := len(nalu); len > 0 {
-				utils.PutU32BE(buffer[index:], uint32(len))
-				index += 4
-				copy(buffer[index:], nalu)
-				index += len
+	if header.CodecID == av.VIDEO_H264 {
+		naluType := src[0] & 0x1F
+		if naluType == 7 || naluType == 8 {
+			//如果是7或8，应该是I帧，把里面的nalu单元都提取出来，打包
+			//naluLength nalu naluLength nalu
+			nalus := h264.ParseNalusN(src, 3)
+			buffer := make([]byte, len(tagBuffer)+len(src)+len(nalus)*4)
+			copy(buffer[index:], tagBuffer)
+			index += len(tagBuffer)
+			for _, nalu := range nalus {
+				if len := len(nalu); len > 0 {
+					utils.PutU32BE(buffer[index:], uint32(len))
+					index += 4
+					copy(buffer[index:], nalu)
+					index += len
+				}
 			}
+			return buffer[:index], nil
 		}
-		return buffer[:index]
 	}
-	src = src[4:] //去掉start code
+
+	if len(src) == 0 {
+		return nil, fmt.Errorf("invalid data")
+	}
+	//否则都统一打包发送
 	//创建buffer len(tagBuffer) + 4字节长度 + 数据长度
-	buffer = make([]byte, len(tagBuffer)+4+len(src))
+	buffer := make([]byte, len(tagBuffer)+4+len(src))
 	//拷贝tag 头数据
 	copy(buffer[index:], tagBuffer)
 	index += len(tagBuffer)
@@ -473,7 +539,103 @@ func NewAVCNaluData(src []byte, timeStamp uint32) (buffer []byte) {
 	//拷贝数据
 	copy(buffer[index:], src)
 	index += len(src)
-	return buffer[:index]
+	return buffer[:index], nil
+}
+
+// //NewAVCNaluData 把nalu单元打包成rtmp的payload
+// func NewAVCNaluData(src []byte, timeStamp uint32) (buffer []byte) {
+// 	//nalu单元至少要大于4个字节，包括start code（一帧开始的起始码应该是4位）
+// 	if len(src) <= 4 {
+// 		buffer = make([]byte, 0)
+// 		return
+// 	}
+// 	//获取naluType类型
+// 	frameType := uint8(av.FRAME_INTER)
+// 	naluType := src[4] & 0x1F
+// 	if naluType == 7 || naluType == 8 || naluType == 5 {
+// 		frameType = uint8(av.FRAME_KEY)
+// 	}
+// 	tag := &Tag{
+// 		flvt: flvTag{
+// 			fType:           av.TAG_VIDEO,
+// 			dataSize:        uint32(len(src)), //在用rtmp协议发送是，改字段好像不起作用，正常情况是后面mediaTag+数据的长度
+// 			timeStamp:       timeStamp,
+// 			timeStampExtend: 0,
+// 			streamID:        0,
+// 		},
+// 		mediat: mediaTag{
+// 			frameType:       frameType,
+// 			codecID:         av.VIDEO_H264,
+// 			avcPacketType:   av.AVC_NALU,
+// 			compositionTime: 0,
+// 		},
+// 	}
+// 	//生成tagHeader 部分
+// 	tagBuffer := muxerTagData(tag)
+// 	index := 0
+// 	if naluType == 7 || naluType == 8 {
+// 		//如果是7或8，应该是I帧，把里面的nalu单元都提取出来，打包
+// 		//naluLength nalu naluLength nalu
+// 		nalus := h264.ParseNalusN(src, 3)
+// 		buffer = make([]byte, len(tagBuffer)+len(src)+len(nalus)*4)
+// 		copy(buffer[index:], tagBuffer)
+// 		index += len(tagBuffer)
+// 		for _, nalu := range nalus {
+// 			if len := len(nalu); len > 0 {
+// 				utils.PutU32BE(buffer[index:], uint32(len))
+// 				index += 4
+// 				copy(buffer[index:], nalu)
+// 				index += len
+// 			}
+// 		}
+// 		return buffer[:index]
+// 	}
+// 	src = src[4:] //去掉start code
+// 	//创建buffer len(tagBuffer) + 4字节长度 + 数据长度
+// 	buffer = make([]byte, len(tagBuffer)+4+len(src))
+// 	//拷贝tag 头数据
+// 	copy(buffer[index:], tagBuffer)
+// 	index += len(tagBuffer)
+// 	//设置数据长度
+// 	utils.PutU32BE(buffer[index:], uint32(len(src)))
+// 	index += 4
+// 	//拷贝数据
+// 	copy(buffer[index:], src)
+// 	index += len(src)
+// 	return buffer[:index]
+// }
+
+// PackAudioData 打包音频数据
+func PackAudioData(ah *av.AudioPacketHeader, streamID uint32, src []byte,
+	timeStamp uint32) ([]byte, error) {
+	if ah.SoundFormat != av.SOUND_AAC {
+		return nil, fmt.Errorf("code %d not support", ah.SoundFormat)
+	}
+
+	tag := &Tag{
+		flvt: flvTag{
+			fType:           av.TAG_AUDIO,
+			dataSize:        uint32(len(src)), //可能由上层协议作为一帧的分割，该字段没有效果
+			timeStamp:       timeStamp,
+			timeStampExtend: 0, //todo
+			streamID:        streamID,
+		},
+		mediat: mediaTag{
+			soundFormat:   ah.SoundFormat,
+			soundRate:     ah.SoundRate,
+			soundSize:     ah.SoundSize,
+			soundType:     ah.SoundType,
+			aacPacketType: av.AAC_RAW,
+		},
+	}
+	tagBuffer := muxerTagData(tag)
+	index := 0
+	buffer := make([]byte, len(tagBuffer)+len(src))
+	copy(buffer[index:], tagBuffer)
+	index += len(tagBuffer)
+	copy(buffer[index:], src)
+	index += len(src)
+	return buffer[:index], nil
 }
 
 //NewAACData comment
@@ -487,10 +649,10 @@ func NewAACData(ah av.AudioPacketHeader, src []byte, timeStamp uint32) (buffer [
 			streamID:        0,
 		},
 		mediat: mediaTag{
-			soundFormat:   ah.SoundFormat(),
-			soundRate:     ah.SoundRate(),
-			soundSize:     ah.SoundSize(),
-			soundType:     ah.SoundType(),
+			soundFormat:   ah.SoundFormat,
+			soundRate:     ah.SoundRate,
+			soundSize:     ah.SoundSize,
+			soundType:     ah.SoundType,
 			aacPacketType: av.AAC_RAW,
 		},
 	}

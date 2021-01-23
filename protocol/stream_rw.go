@@ -3,16 +3,33 @@ package protocol
 import (
 	"errors"
 	"fmt"
-	"net/url"
-	"reflect"
-	"strings"
 	"time"
 
 	"github.com/fabo871218/srtmp/av"
 	"github.com/fabo871218/srtmp/container/flv"
+	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/protocol/core"
-	"github.com/fabo871218/srtmp/utils"
 )
+
+const (
+	maxQueueNum         = 1024
+	saveStaticsInterval = 5000
+)
+
+// ReadCloser ...
+type ReadCloser interface {
+	Close()
+	Alive() bool
+	Read(*av.Packet) error
+}
+
+// WriteCloser ...
+type WriteCloser interface {
+	Close()
+	Alive() bool
+	CalcBaseTimestamp()
+	Write(*av.Packet) error
+}
 
 //StaticsBW todo comment
 type StaticsBW struct {
@@ -28,32 +45,28 @@ type StaticsBW struct {
 	LastTimestamp int64
 }
 
-//StreamReadWriteCloser todo comment
-type StreamReadWriteCloser interface {
-	GetStreamInfo() (string, string, string)
-	Close()
-	Write(core.ChunkStream) error
-	Read(c *core.ChunkStream) error
-}
-
-//PeerWriter 是代表rtmp连接的写入对象
-type PeerWriter struct {
+//StreamWriter 是代表rtmp连接的写入对象
+type StreamWriter struct {
 	av.RWBaser
-	UID         string
-	closed      bool
-	conn        StreamReadWriteCloser
-	packetQueue chan *av.Packet
-	WriteBWInfo StaticsBW
+	streamID     string
+	closed       bool
+	keyframeNeed bool
+	conn         *core.ForwardConnect
+	packetQueue  chan *av.Packet
+	WriteBWInfo  StaticsBW
+	logger       logger.Logger
 }
 
-//NewPeerWriter 创建一个新的写入对象
-func NewPeerWriter(conn StreamReadWriteCloser) *PeerWriter {
-	writer := &PeerWriter{
-		UID:         utils.NewId(),
-		conn:        conn,
-		RWBaser:     av.NewRWBaser(time.Second * time.Duration(*writeTimeout)),
-		packetQueue: make(chan *av.Packet, maxQueueNum),
-		WriteBWInfo: StaticsBW{0, 0, 0, 0, 0, 0, 0, 0},
+//NewStreamWriter 创建一个新的写入对象
+func NewStreamWriter(conn *core.ForwardConnect, streamID string, log logger.Logger) *StreamWriter {
+	writer := &StreamWriter{
+		streamID:     streamID,
+		conn:         conn,
+		RWBaser:      av.NewRWBaser(time.Second * 10),
+		packetQueue:  make(chan *av.Packet, maxQueueNum),
+		WriteBWInfo:  StaticsBW{0, 0, 0, 0, 0, 0, 0, 0},
+		logger:       log,
+		keyframeNeed: true,
 	}
 
 	//todo 这个是否有必要先检查一下读写情况
@@ -61,131 +74,111 @@ func NewPeerWriter(conn StreamReadWriteCloser) *PeerWriter {
 	go func() {
 		err := writer.SendPacket()
 		if err != nil {
-			fmt.Printf("writer.SendPacket failed, %v\n", err)
+			writer.logger.Errorf("SendPacket failed, %s", err.Error())
 		}
 	}()
 	return writer
 }
 
 //SaveStatics 保存统计信息
-func (pw *PeerWriter) SaveStatics(streamid uint32, length uint64, isVideoFlag bool) {
+func (sw *StreamWriter) SaveStatics(streamid uint32, length uint64, isVideoFlag bool) {
 	nowInMS := int64(time.Now().UnixNano() / 1e6)
-	pw.WriteBWInfo.StreamID = streamid
+	sw.WriteBWInfo.StreamID = streamid
 	if isVideoFlag {
-		pw.WriteBWInfo.VideoDatainBytes = pw.WriteBWInfo.VideoDatainBytes + length
+		sw.WriteBWInfo.VideoDatainBytes = sw.WriteBWInfo.VideoDatainBytes + length
 	} else {
-		pw.WriteBWInfo.AudioDatainBytes = pw.WriteBWInfo.AudioDatainBytes + length
+		sw.WriteBWInfo.AudioDatainBytes = sw.WriteBWInfo.AudioDatainBytes + length
 	}
 
-	if pw.WriteBWInfo.LastTimestamp == 0 {
-		pw.WriteBWInfo.LastTimestamp = nowInMS
-	} else if (nowInMS - pw.WriteBWInfo.LastTimestamp) >= SAVE_STATICS_INTERVAL {
-		diffTimestamp := (nowInMS - pw.WriteBWInfo.LastTimestamp) / 1000
+	if sw.WriteBWInfo.LastTimestamp == 0 {
+		sw.WriteBWInfo.LastTimestamp = nowInMS
+	} else if (nowInMS - sw.WriteBWInfo.LastTimestamp) >= saveStaticsInterval {
+		diffTimestamp := (nowInMS - sw.WriteBWInfo.LastTimestamp) / 1000
 
-		pw.WriteBWInfo.VideoSpeedInBytesperMS = (pw.WriteBWInfo.VideoDatainBytes - pw.WriteBWInfo.LastVideoDatainBytes) * 8 / uint64(diffTimestamp) / 1000
-		pw.WriteBWInfo.AudioSpeedInBytesperMS = (pw.WriteBWInfo.AudioDatainBytes - pw.WriteBWInfo.LastAudioDatainBytes) * 8 / uint64(diffTimestamp) / 1000
+		sw.WriteBWInfo.VideoSpeedInBytesperMS = (sw.WriteBWInfo.VideoDatainBytes - sw.WriteBWInfo.LastVideoDatainBytes) * 8 / uint64(diffTimestamp) / 1000
+		sw.WriteBWInfo.AudioSpeedInBytesperMS = (sw.WriteBWInfo.AudioDatainBytes - sw.WriteBWInfo.LastAudioDatainBytes) * 8 / uint64(diffTimestamp) / 1000
 
-		pw.WriteBWInfo.LastVideoDatainBytes = pw.WriteBWInfo.VideoDatainBytes
-		pw.WriteBWInfo.LastAudioDatainBytes = pw.WriteBWInfo.AudioDatainBytes
-		pw.WriteBWInfo.LastTimestamp = nowInMS
+		sw.WriteBWInfo.LastVideoDatainBytes = sw.WriteBWInfo.VideoDatainBytes
+		sw.WriteBWInfo.LastAudioDatainBytes = sw.WriteBWInfo.AudioDatainBytes
+		sw.WriteBWInfo.LastTimestamp = nowInMS
 	}
 }
 
 //Check 连接状态检测
-func (pw *PeerWriter) Check() {
-	var c core.ChunkStream
+func (sw *StreamWriter) Check() {
 	for {
-		if err := pw.conn.Read(&c); err != nil {
-			pw.Close()
+		_, err := sw.conn.Read()
+		if err != nil {
+			sw.Close()
 			return
 		}
 	}
 }
 
-//DropPacket todo
-func (pw *PeerWriter) DropPacket(pktQue chan *av.Packet, streamInfo av.StreamInfo) {
-	fmt.Printf("[%v] packet queue max!!!\n", streamInfo)
-	for i := 0; i < maxQueueNum-84; i++ {
-		tmpPkt, ok := <-pktQue
-		// try to don't drop audio
-		if ok && tmpPkt.IsAudio {
-			if len(pktQue) > maxQueueNum-2 {
-				fmt.Println("drop audio pkt")
-				<-pktQue
-			} else {
-				pktQue <- tmpPkt
-			}
-
-		}
-
-		if ok && tmpPkt.IsVideo {
-			videoPkt, ok := tmpPkt.Header.(av.VideoPacketHeader)
-			// dont't drop sps config and dont't drop key frame
-			if ok && (videoPkt.IsSeq() || videoPkt.IsKeyFrame()) {
-				pktQue <- tmpPkt
-			}
-			if len(pktQue) > maxQueueNum-10 {
-				fmt.Println("drop video pkt")
-				<-pktQue
-			}
-		}
-	}
-	fmt.Printf("packet queue len: %d\n", len(pktQue))
-}
-
-//
-func (pw *PeerWriter) Write(p *av.Packet) (err error) {
-	err = nil
-	if pw.closed {
+//Write ...
+func (sw *StreamWriter) Write(p *av.Packet) (err error) {
+	if sw.closed {
 		err = errors.New("PeerWriter closed")
 		return
 	}
 	defer func() {
 		if e := recover(); e != nil {
-			errString := fmt.Sprintf("PeerWriter has already been closed:%v", e)
-			err = errors.New(errString)
+			err = fmt.Errorf("Panic %v", e)
 		}
 	}()
-	if len(pw.packetQueue) >= maxQueueNum-24 {
-		pw.DropPacket(pw.packetQueue, pw.StreamInfo())
-	} else {
-		pw.packetQueue <- p
+
+	if p.PacketType == av.PacketTypeVideo {
+		if sw.keyframeNeed {
+			if p.VHeader.FrameType != av.FRAME_KEY {
+				sw.logger.Warn("Key frame need.")
+				return
+			}
+			sw.keyframeNeed = false
+		}
+	}
+
+	select {
+	case sw.packetQueue <- p:
+	default:
+		if p.PacketType == av.PacketTypeVideo && p.VHeader.FrameType == av.FRAME_KEY {
+			sw.keyframeNeed = true
+		}
+		sw.logger.Warn("packet droped...")
 	}
 	return
 }
 
 //SendPacket todo comment
-func (pw *PeerWriter) SendPacket() error {
-	Flush := reflect.ValueOf(pw.conn).MethodByName("Flush")
+func (sw *StreamWriter) SendPacket() error {
 	var cs core.ChunkStream
 	for {
-		p, ok := <-pw.packetQueue
+		p, ok := <-sw.packetQueue
 		if ok {
 			cs.Data = p.Data
 			cs.Length = uint32(len(p.Data))
 			cs.StreamID = p.StreamID
 			cs.Timestamp = p.TimeStamp
-			cs.Timestamp += pw.BaseTimeStamp()
+			cs.Timestamp += sw.BaseTimeStamp()
 
-			if p.IsVideo {
+			isVideo := false
+			switch p.PacketType {
+			case av.PacketTypeVideo:
 				cs.TypeID = av.TAG_VIDEO
-			} else {
-				if p.IsMetadata {
-					cs.TypeID = av.TAG_SCRIPTDATAAMF0
-				} else {
-					cs.TypeID = av.TAG_AUDIO
-				}
+				isVideo = true
+			case av.PacketTypeAudio:
+				cs.TypeID = av.TAG_AUDIO
+			case av.PacketTypeMetadata:
+				cs.TypeID = av.TAG_SCRIPTDATAAMF0
 			}
-
-			pw.SaveStatics(p.StreamID, uint64(cs.Length), p.IsVideo)
-			pw.SetPreTime()
-			pw.RecTimeStamp(cs.Timestamp, cs.TypeID)
-			err := pw.conn.Write(cs)
+			sw.SaveStatics(p.StreamID, uint64(cs.Length), isVideo)
+			sw.SetPreTime()
+			sw.RecTimeStamp(cs.Timestamp, cs.TypeID)
+			err := sw.conn.Write(cs)
 			if err != nil {
-				pw.closed = true
+				sw.closed = true
 				return err
 			}
-			Flush.Call(nil)
+			sw.conn.Flush()
 		} else {
 			return errors.New("closed")
 		}
@@ -193,50 +186,52 @@ func (pw *PeerWriter) SendPacket() error {
 }
 
 //StreamInfo todo comment
-func (pw *PeerWriter) StreamInfo() (ret av.StreamInfo) {
-	ret.UID = pw.UID
-	_, _, URL := pw.conn.GetStreamInfo()
-	ret.URL = URL
-	_url, err := url.Parse(URL)
-	if err != nil {
-		fmt.Printf("Parse url failed, url:%s err:%v\n", URL, err)
-	}
-	ret.Key = strings.TrimLeft(_url.Path, "/")
-	ret.Inter = true
-	return
-}
+// func (sw *StreamWriter) StreamInfo() (ret av.StreamInfo) {
+// 	ret.UID = sw.UID
+// 	_, _, URL := sw.conn.GetStreamInfo()
+// 	ret.URL = URL
+// 	_url, err := url.Parse(URL)
+// 	if err != nil {
+// 		fmt.Printf("Parse url failed, url:%s err:%v\n", URL, err)
+// 	}
+// 	ret.Key = strings.TrimLeft(_url.Path, "/")
+// 	ret.Inter = true
+// 	return
+// }
 
 //Close todo comment
-func (pw *PeerWriter) Close() {
-	if !pw.closed {
-		close(pw.packetQueue)
+func (sw *StreamWriter) Close() {
+	if !sw.closed {
+		close(sw.packetQueue)
 	}
-	pw.closed = true
-	pw.conn.Close()
+	sw.closed = true
+	sw.conn.Close()
 }
 
-//PeerReader todo comment
-type PeerReader struct {
+//StreamReader todo comment
+type StreamReader struct {
 	av.RWBaser
-	UID        string
+	streamID   string
 	demuxer    *flv.Demuxer
-	conn       StreamReadWriteCloser
+	conn       *core.ForwardConnect
 	ReadBWInfo StaticsBW
+	logger     logger.Logger
 }
 
-//NewPeerReader 创建一个rtmp连接读对象
-func NewPeerReader(conn StreamReadWriteCloser) *PeerReader {
-	return &PeerReader{
-		UID:        utils.NewId(),
+//NewStreamReader 创建一个rtmp连接读对象
+func NewStreamReader(conn *core.ForwardConnect, streamID string, log logger.Logger) *StreamReader {
+	return &StreamReader{
+		streamID:   streamID,
 		conn:       conn,
-		RWBaser:    av.NewRWBaser(time.Second * time.Duration(*writeTimeout)),
+		RWBaser:    av.NewRWBaser(time.Second * 10),
 		demuxer:    flv.NewDemuxer(),
 		ReadBWInfo: StaticsBW{0, 0, 0, 0, 0, 0, 0, 0},
+		logger:     log,
 	}
 }
 
 //SaveStatics todo comment
-func (pr *PeerReader) SaveStatics(streamid uint32, length uint64, isVideoFlag bool) {
+func (pr *StreamReader) SaveStatics(streamid uint32, length uint64, isVideoFlag bool) {
 	nowInMS := int64(time.Now().UnixNano() / 1e6)
 
 	pr.ReadBWInfo.StreamID = streamid
@@ -248,7 +243,7 @@ func (pr *PeerReader) SaveStatics(streamid uint32, length uint64, isVideoFlag bo
 
 	if pr.ReadBWInfo.LastTimestamp == 0 {
 		pr.ReadBWInfo.LastTimestamp = nowInMS
-	} else if (nowInMS - pr.ReadBWInfo.LastTimestamp) >= SAVE_STATICS_INTERVAL {
+	} else if (nowInMS - pr.ReadBWInfo.LastTimestamp) >= saveStaticsInterval {
 		diffTimestamp := (nowInMS - pr.ReadBWInfo.LastTimestamp) / 1000
 
 		//glog.Infof("now=%d, last=%d, diff=%d", nowInMS, v.ReadBWInfo.LastTimestamp, diffTimestamp)
@@ -261,7 +256,7 @@ func (pr *PeerReader) SaveStatics(streamid uint32, length uint64, isVideoFlag bo
 	}
 }
 
-func (pr *PeerReader) Read(p *av.Packet) (err error) {
+func (pr *StreamReader) Read(p *av.Packet) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("rtmp read packet panic: %v\n", r)
@@ -269,10 +264,9 @@ func (pr *PeerReader) Read(p *av.Packet) (err error) {
 	}()
 
 	pr.SetPreTime()
-	var cs core.ChunkStream
+	var cs *core.ChunkStream
 	for {
-		err = pr.conn.Read(&cs)
-		if err != nil {
+		if cs, err = pr.conn.Read(); err != nil {
 			return err
 		}
 
@@ -284,32 +278,39 @@ func (pr *PeerReader) Read(p *av.Packet) (err error) {
 		}
 	}
 
-	p.IsAudio = cs.TypeID == av.TAG_AUDIO
-	p.IsVideo = cs.TypeID == av.TAG_VIDEO
-	p.IsMetadata = cs.TypeID == av.TAG_SCRIPTDATAAMF0 || cs.TypeID == av.TAG_SCRIPTDATAAMF3
+	isVideo := false
+	switch cs.TypeID {
+	case av.TAG_VIDEO:
+		p.PacketType = av.PacketTypeVideo
+		isVideo = true
+	case av.TAG_AUDIO:
+		p.PacketType = av.PacketTypeAudio
+	case av.TAG_SCRIPTDATAAMF0, av.TAG_SCRIPTDATAAMF3:
+		p.PacketType = av.PacketTypeMetadata
+	}
 	p.StreamID = cs.StreamID
 	p.Data = cs.Data
 	p.TimeStamp = cs.Timestamp
 
-	pr.SaveStatics(p.StreamID, uint64(len(p.Data)), p.IsVideo)
+	pr.SaveStatics(p.StreamID, uint64(len(p.Data)), isVideo)
 	pr.demuxer.DemuxH(p)
 	return err
 }
 
-//Info 返回信息
-func (pr *PeerReader) StreamInfo() (ret av.StreamInfo) {
-	ret.UID = pr.UID
-	_, _, URL := pr.conn.GetStreamInfo()
-	ret.URL = URL
-	_url, err := url.Parse(URL)
-	if err != nil {
-		fmt.Printf("Parse url failed, url:%s err:%v\n", URL, err)
-	}
-	ret.Key = strings.TrimLeft(_url.Path, "/")
-	return
-}
+//StreamInfo 返回信息
+// func (pr *StreamReader) StreamInfo() (ret av.StreamInfo) {
+// 	ret.UID = pr.UID
+// 	_, _, URL := pr.conn.GetStreamInfo()
+// 	ret.URL = URL
+// 	_url, err := url.Parse(URL)
+// 	if err != nil {
+// 		fmt.Printf("Parse url failed, url:%s err:%v\n", URL, err)
+// 	}
+// 	ret.Key = strings.TrimLeft(_url.Path, "/")
+// 	return
+// }
 
 //Close 关闭读对象
-func (pr *PeerReader) Close() {
+func (pr *StreamReader) Close() {
 	pr.conn.Close()
 }

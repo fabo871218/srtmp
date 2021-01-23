@@ -5,7 +5,7 @@ type Pool struct {
 	buf []byte
 }
 
-const maxpoolsize = 500 * 1024
+const maxpoolsize = 50 * 1024
 
 func (pool *Pool) Get(size int) []byte {
 	if maxpoolsize-pool.pos < size {

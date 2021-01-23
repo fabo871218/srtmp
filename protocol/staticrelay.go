@@ -7,6 +7,7 @@ import (
 
 	"github.com/fabo871218/srtmp/av"
 	"github.com/fabo871218/srtmp/configure"
+	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/protocol/core"
 )
 
@@ -16,6 +17,7 @@ type StaticPush struct {
 	sndctrl_chan  chan string
 	connectClient *core.ConnClient
 	startflag     bool
+	logger        logger.Logger
 }
 
 var G_StaticPushMap = make(map[string](*StaticPush))
@@ -95,7 +97,7 @@ func (self *StaticPush) Start() error {
 		return errors.New(fmt.Sprintf("StaticPush already start %s", self.RtmpUrl))
 	}
 
-	self.connectClient = core.NewConnClient()
+	self.connectClient = core.NewConnClient(self.logger)
 
 	fmt.Printf("static publish server addr:%v starting....\n", self.RtmpUrl)
 	err := self.connectClient.Start(self.RtmpUrl, "publish")
@@ -103,7 +105,7 @@ func (self *StaticPush) Start() error {
 		fmt.Printf("connectClient.Start url=%v error\n", self.RtmpUrl)
 		return err
 	}
-	fmt.Printf("static publish server addr:%v started, streamid=%d\n", self.RtmpUrl, self.connectClient.GetStreamId())
+	fmt.Printf("static publish server addr:%v started, streamid=%d\n", self.RtmpUrl, self.connectClient.GetStreamID())
 	go self.HandleAvPacket()
 
 	self.startflag = true
@@ -136,23 +138,22 @@ func (self *StaticPush) sendPacket(p *av.Packet) {
 
 	cs.Data = p.Data
 	cs.Length = uint32(len(p.Data))
-	cs.StreamID = self.connectClient.GetStreamId()
+	cs.StreamID = self.connectClient.GetStreamID()
 	cs.Timestamp = p.TimeStamp
 	//cs.Timestamp += v.BaseTimeStamp()
 
 	//glog.Infof("Static sendPacket: rtmpurl=%s, length=%d, streamid=%d",
 	//	self.RtmpUrl, len(p.Data), cs.StreamID)
-	if p.IsVideo {
+	switch p.PacketType {
+	case av.PacketTypeVideo:
 		cs.TypeID = av.TAG_VIDEO
-	} else {
-		if p.IsMetadata {
-			cs.TypeID = av.TAG_SCRIPTDATAAMF0
-		} else {
-			cs.TypeID = av.TAG_AUDIO
-		}
+	case av.PacketTypeAudio:
+		cs.TypeID = av.TAG_AUDIO
+	case av.PacketTypeMetadata:
+		cs.TypeID = av.TAG_SCRIPTDATAAMF0
+	default:
 	}
-
-	self.connectClient.Write(cs)
+	self.connectClient.Write(&cs)
 }
 
 func (self *StaticPush) HandleAvPacket() {

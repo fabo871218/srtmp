@@ -137,6 +137,7 @@ import (
 // }
 
 func main() {
+	port := flag.Int("port", 1935, "rtmp server port")
 	flag.Parse()
 
 	defer func() {
@@ -145,8 +146,9 @@ func main() {
 			time.Sleep(time.Second * 1)
 		}
 	}()
-
-	if err := srtmp.ServeRtmp(":1935"); err != nil {
+	api := srtmp.NewAPI()
+	addr := fmt.Sprintf(":%d", *port)
+	if err := api.ServeRtmp(addr); err != nil {
 		fmt.Println("Servr rtmp failed, err:", err)
 		return
 	}

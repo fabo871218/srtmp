@@ -1,7 +1,9 @@
 package cache
 
 import (
+	"errors"
 	"flag"
+	"fmt"
 
 	"github.com/fabo871218/srtmp/av"
 )
@@ -10,71 +12,81 @@ var (
 	gopNum = flag.Int("gopNum", 1, "gop num")
 )
 
+// Cache ...
 type Cache struct {
 	gop      *GopCache
-	videoSeq *SpecialCache
-	audioSeq *SpecialCache
-	metadata *SpecialCache
+	videoSeq *av.Packet
+	audioSeq *av.Packet
+	metadata *av.Packet
 }
 
+// NewCache ...
 func NewCache() *Cache {
 	return &Cache{
 		gop:      NewGopCache(*gopNum),
-		videoSeq: NewSpecialCache(),
-		audioSeq: NewSpecialCache(),
-		metadata: NewSpecialCache(),
+		videoSeq: nil,
+		audioSeq: nil,
+		metadata: nil,
 	}
 }
 
-func (cache *Cache) Write(p av.Packet) {
-	if p.IsMetadata {
-		cache.metadata.Write(&p)
-		return
-	} else {
-		if !p.IsVideo {
-			ah, ok := p.Header.(av.AudioPacketHeader)
-			if ok {
-				if ah.SoundFormat() == av.SOUND_AAC &&
-					ah.AACPacketType() == av.AAC_SEQHDR {
-					cache.audioSeq.Write(&p)
-					return
+func (cache *Cache) Write(p *av.Packet) {
+	switch p.PacketType {
+	case av.PacketTypeAudio:
+		// 目前只处理aac的sequence header，如果后续要支持更多的格式
+		// 可在此添加
+		if p.AHeader.SoundFormat == av.SOUND_AAC && p.AHeader.AACPacketType == av.AAC_SEQHDR {
+			cache.audioSeq = p
+			return
+		}
+	case av.PacketTypeVideo:
+		// 这里目前只处理h264的sequence和gop缓存
+		if p.VHeader.CodecID == av.VIDEO_H264 {
+			if p.VHeader.FrameType == av.FRAME_KEY {
+				if p.VHeader.AVCPacketType == av.AVC_SEQHDR {
+					cache.videoSeq = p
 				} else {
-					return
+					cache.gop.Write(p, true)
 				}
 			}
+			cache.gop.Write(p, false)
+		}
+	case av.PacketTypeMetadata:
+		cache.metadata = p
+	}
+}
 
-		} else {
-			vh, ok := p.Header.(av.VideoPacketHeader)
-			if ok {
-				if vh.IsSeq() {
-					cache.videoSeq.Write(&p)
-					return
-				}
-			} else {
-				return
-			}
+// Send ...
+func (cache *Cache) Send(inputChan chan<- *av.Packet) error {
+	cachePkts := make([]*av.Packet, 3)
+	cachePkts = cachePkts[:0]
+	if cache.metadata != nil {
+		cachePkts = append(cachePkts, cache.metadata)
+	}
+	if cache.videoSeq != nil {
+		cachePkts = append(cachePkts, cache.videoSeq)
+	}
+	if cache.audioSeq != nil {
+		cachePkts = append(cachePkts, cache.audioSeq)
+	}
 
+	// 发送sequence header
+	for _, pkt := range cachePkts {
+		select {
+		case inputChan <- pkt:
+			fmt.Println("Input pkt....")
+		default:
+			return errors.New("send sequence failed")
 		}
 	}
-	cache.gop.Write(&p)
-}
 
-func (cache *Cache) Send(w av.WriteCloser) error {
-	if err := cache.metadata.Send(w); err != nil {
-		return err
+	// 发送视频帧
+	for _, pkt := range cache.gop.gops {
+		select {
+		case inputChan <- pkt:
+			fmt.Println("Input pkt....")
+		default:
+		}
 	}
-
-	if err := cache.videoSeq.Send(w); err != nil {
-		return err
-	}
-
-	if err := cache.audioSeq.Send(w); err != nil {
-		return err
-	}
-
-	if err := cache.gop.Send(w); err != nil {
-		return err
-	}
-
 	return nil
 }

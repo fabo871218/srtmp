@@ -29,8 +29,8 @@ func TestTSEncoder(t *testing.T) {
 		0x78, 0x00, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x38, 0x30, 0x00, 0x06, 0x00, 0x38,
 	}
 	p := av.Packet{
-		IsVideo: false,
-		Data:    data,
+		PacketType: av.PacketTypeUnknow,
+		Data:       data,
 	}
 	err := m.Mux(&p, w)
 	at.Equal(err, nil)

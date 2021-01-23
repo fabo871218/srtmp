@@ -1,7 +1,6 @@
 package av
 
 import (
-	"fmt"
 	"io"
 )
 
@@ -69,7 +68,21 @@ const (
 	AVC_EOS    = 2 // avc end of sequence
 
 	//avc视频编码id
-	VIDEO_H264 = 7
+	VIDEO_JPEG        = 1
+	VideoH263         = 2
+	VideoScreen       = 3
+	VideoVP6          = 4
+	VideoVP6WithAlpha = 5
+	VideoScreenV2     = 6
+	VIDEO_H264        = 7
+)
+
+// Packet类型
+const (
+	PacketTypeUnknow   = 0
+	PacketTypeVideo    = 1 //音频包
+	PacketTypeAudio    = 2 //视频包
+	PacketTypeMetadata = 3 //数据包
 )
 
 var (
@@ -79,42 +92,29 @@ var (
 
 // Header can be converted to AudioHeaderInfo or VideoHeaderInfo
 type Packet struct {
-	IsAudio    bool
-	IsVideo    bool
-	IsMetadata bool
+	PacketType uint32 // packet类型
 	TimeStamp  uint32 // dts
 	StreamID   uint32
-	Header     PacketHeader
+	VHeader    VideoPacketHeader
+	AHeader    AudioPacketHeader
 	Data       []byte
 }
 
-type StreamInfo struct {
-	Key   string
-	URL   string
-	UID   string
-	Inter bool
-}
-
-//PacketHeader comment
-type PacketHeader interface {
-}
-
 //AudioPacketHeader comment
-type AudioPacketHeader interface {
-	PacketHeader
-	SoundFormat() uint8
-	SoundRate() uint8
-	SoundSize() uint8
-	SoundType() uint8
-	AACPacketType() uint8
+type AudioPacketHeader struct {
+	SoundFormat   uint8
+	SoundRate     uint8
+	SoundSize     uint8
+	SoundType     uint8
+	AACPacketType uint8
 }
 
-type VideoPacketHeader interface {
-	PacketHeader
-	IsKeyFrame() bool
-	IsSeq() bool
-	CodecID() uint8
-	CompositionTime() int32
+//VideoPacketHeader ...
+type VideoPacketHeader struct {
+	FrameType       uint8
+	AVCPacketType   uint8
+	CodecID         uint8
+	CompositionTime int32
 }
 
 type Demuxer interface {
@@ -132,37 +132,4 @@ type SampleRater interface {
 type CodecParser interface {
 	SampleRater
 	Parse(*Packet, io.Writer) error
-}
-
-type ExtendWriter interface {
-	NewWriter(StreamInfo) (WriteCloser, error)
-}
-
-type Handler interface {
-	HandleReader(ReadCloser) error
-	HandleWriter(WriteCloser) error
-}
-
-func (streamInfo StreamInfo) IsInterval() bool {
-	return streamInfo.Inter
-}
-
-func (streamInfo StreamInfo) String() string {
-	return fmt.Sprintf("<key: %s, URL: %s, UID: %s, Inter: %v>",
-		streamInfo.Key, streamInfo.URL, streamInfo.UID, streamInfo.Inter)
-}
-
-type ReadCloser interface {
-	StreamInfo() StreamInfo
-	Close()
-	Alive() bool
-	Read(*Packet) error
-}
-
-type WriteCloser interface {
-	StreamInfo() StreamInfo
-	Close()
-	Alive() bool
-	CalcBaseTimestamp()
-	Write(*Packet) error
 }

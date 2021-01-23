@@ -68,8 +68,13 @@ const (
 	AVC_EOS    = 2 // avc end of sequence
 
 	//avc视频编码id
-	VIDEO_JPEG = 1
-	VIDEO_H264 = 7
+	VIDEO_JPEG        = 1
+	VideoH263         = 2
+	VideoScreen       = 3
+	VideoVP6          = 4
+	VideoVP6WithAlpha = 5
+	VideoScreenV2     = 6
+	VIDEO_H264        = 7
 )
 
 // Packet类型

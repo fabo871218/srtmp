@@ -79,6 +79,10 @@ func PushJPEG(client *srtmp.RtmpClient) {
 		if err != nil {
 			panic(err)
 		}
+		index++
+		if index >= 100 {
+			index = 0
+		}
 		pkt := &av.Packet{
 			PacketType: av.PacketTypeVideo,
 			TimeStamp:  uint32(timeStamp),
@@ -113,5 +117,5 @@ func main() {
 		panic(err)
 	}
 
-	PushH264(client)
+	PushJPEG(client)
 }

@@ -480,7 +480,7 @@ func PackVideoData(header *av.VideoPacketHeader, streamID uint32, src []byte,
 				compositionTime: 0, // todo
 			},
 		}
-	case av.VIDEO_JPEG:
+	case av.VIDEO_JPEG, av.VideoH263:
 		tag = &Tag{
 			flvt: flvTag{
 				fType:           av.TAG_VIDEO,

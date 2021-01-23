@@ -150,7 +150,7 @@ func (s *RtmpStream) streamLoop() {
 			}
 		case w := <-s.writerChan: // 接收到play消息
 			{
-				// todo 这个方法不是很好，先这样，后续再优化
+				//TODO 这个方法不是很好，先这样，后续再优化
 				sw, ok := w.(*StreamWriter)
 				if ok == false {
 					s.logger.Errorf("can not cast writerclose to streamwriter")

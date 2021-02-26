@@ -2,7 +2,6 @@ package protocol
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/fabo871218/srtmp/av"
@@ -72,7 +71,7 @@ func NewStreamWriter(conn *core.ForwardConnect, streamID string, log logger.Logg
 	//todo 这个是否有必要先检查一下读写情况
 	go writer.Check()
 	go func() {
-		err := writer.SendPacket()
+		err := writer.sendloop()
 		if err != nil {
 			writer.logger.Errorf("SendPacket failed, %s", err.Error())
 		}
@@ -121,15 +120,10 @@ func (sw *StreamWriter) Write(p *av.Packet) (err error) {
 		err = errors.New("PeerWriter closed")
 		return
 	}
-	defer func() {
-		if e := recover(); e != nil {
-			err = fmt.Errorf("Panic %v", e)
-		}
-	}()
 
 	if p.PacketType == av.PacketTypeVideo {
 		if sw.keyframeNeed {
-			if p.VHeader.FrameType != av.FRAME_KEY {
+			if p.VHeader.FrameType != av.FrameKey {
 				sw.logger.Warn("Key frame need.")
 				return
 			}
@@ -140,7 +134,7 @@ func (sw *StreamWriter) Write(p *av.Packet) (err error) {
 	select {
 	case sw.packetQueue <- p:
 	default:
-		if p.PacketType == av.PacketTypeVideo && p.VHeader.FrameType == av.FRAME_KEY {
+		if p.PacketType == av.PacketTypeVideo && p.VHeader.FrameType == av.FrameKey {
 			sw.keyframeNeed = true
 		}
 		sw.logger.Warn("packet droped...")
@@ -148,8 +142,8 @@ func (sw *StreamWriter) Write(p *av.Packet) (err error) {
 	return
 }
 
-//SendPacket todo comment
-func (sw *StreamWriter) SendPacket() error {
+//sendloop todo comment
+func (sw *StreamWriter) sendloop() error {
 	var cs core.ChunkStream
 	for {
 		p, ok := <-sw.packetQueue
@@ -257,12 +251,6 @@ func (pr *StreamReader) SaveStatics(streamid uint32, length uint64, isVideoFlag 
 }
 
 func (pr *StreamReader) Read(p *av.Packet) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Printf("rtmp read packet panic: %v\n", r)
-		}
-	}()
-
 	pr.SetPreTime()
 	var cs *core.ChunkStream
 	for {
@@ -270,6 +258,7 @@ func (pr *StreamReader) Read(p *av.Packet) (err error) {
 			return err
 		}
 
+		// todo 需要忽略其他消息吗
 		if cs.TypeID == av.TAG_AUDIO ||
 			cs.TypeID == av.TAG_VIDEO ||
 			cs.TypeID == av.TAG_SCRIPTDATAAMF0 ||
@@ -289,8 +278,9 @@ func (pr *StreamReader) Read(p *av.Packet) (err error) {
 		p.PacketType = av.PacketTypeMetadata
 	}
 	p.StreamID = cs.StreamID
-	p.Data = cs.Data
 	p.TimeStamp = cs.Timestamp
+	p.Data = make([]byte, len(cs.Data))
+	copy(p.Data, cs.Data)
 
 	pr.SaveStatics(p.StreamID, uint64(len(p.Data)), isVideo)
 	pr.demuxer.DemuxH(p)

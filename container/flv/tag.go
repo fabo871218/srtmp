@@ -249,7 +249,7 @@ func (tag *Tag) ParseVideoHeader(b []byte) (n int, err error) {
 	tag.mediat.frameType = flags >> 4 //获取帧类型
 	tag.mediat.codecID = flags & 0xf  //获取编码id
 	n++
-	if tag.mediat.codecID == av.VIDEO_H264 {
+	if tag.mediat.codecID == av.VideoH264 {
 		//如果编码id是avc，再获取avc的视频封装格式
 		tag.mediat.avcPacketType = b[1] //AVCPacketType 0-sequence header 1-nalue 2-end of sequence
 		//获取3个字节的compositionTime
@@ -280,9 +280,9 @@ func NewAVCSequenceHeader(sps, pps []byte, timeStamp uint32) []byte {
 			streamID:        0,                            //24bit always 0
 		},
 		mediat: mediaTag{
-			frameType:       av.FRAME_KEY,
-			codecID:         av.VIDEO_H264,
-			avcPacketType:   av.AVC_SEQHDR,
+			frameType:       av.FrameKey,
+			codecID:         av.VideoH264,
+			avcPacketType:   av.AvcSEQHDR,
 			compositionTime: 0,
 		},
 	}
@@ -451,7 +451,7 @@ func PackVideoData(header *av.VideoPacketHeader, streamID uint32, src []byte,
 	timeStamp uint32) ([]byte, error) {
 	var tag *Tag
 	switch header.CodecID {
-	case av.VIDEO_H264:
+	case av.VideoH264:
 		if len(src) >= 4 && bytes.Compare(src[0:4], h264.StartCode4) == 0 {
 			src = src[4:]
 		}
@@ -460,10 +460,10 @@ func PackVideoData(header *av.VideoPacketHeader, streamID uint32, src []byte,
 			return nil, fmt.Errorf("invalid data")
 		}
 		//获取naluType类型
-		frameType := uint8(av.FRAME_INTER)
+		frameType := uint8(av.FrameInter)
 		naluType := src[0] & 0x1F
 		if naluType == 7 || naluType == 8 || naluType == 5 {
-			frameType = uint8(av.FRAME_KEY)
+			frameType = uint8(av.FrameKey)
 		}
 		tag = &Tag{
 			flvt: flvTag{
@@ -480,7 +480,7 @@ func PackVideoData(header *av.VideoPacketHeader, streamID uint32, src []byte,
 				compositionTime: 0, // todo
 			},
 		}
-	case av.VIDEO_JPEG, av.VideoH263:
+	case av.VideoJPEG, av.VideoH263:
 		tag = &Tag{
 			flvt: flvTag{
 				fType:           av.TAG_VIDEO,
@@ -490,7 +490,7 @@ func PackVideoData(header *av.VideoPacketHeader, streamID uint32, src []byte,
 				streamID:        0, //todo 这个需要设置
 			},
 			mediat: mediaTag{
-				frameType:       av.FRAME_KEY, //jpeg都认为是key frame
+				frameType:       av.FrameKey, //jpeg都认为是key frame
 				codecID:         header.CodecID,
 				avcPacketType:   0, // jpeg，这个字段不起作用
 				compositionTime: 0, // jpeg，这个字段不起作用
@@ -503,7 +503,7 @@ func PackVideoData(header *av.VideoPacketHeader, streamID uint32, src []byte,
 	index := 0
 	//生成tagHeader 部分
 	tagBuffer := muxerTagData(tag)
-	if header.CodecID == av.VIDEO_H264 {
+	if header.CodecID == av.VideoH264 {
 		naluType := src[0] & 0x1F
 		if naluType == 7 || naluType == 8 {
 			//如果是7或8，应该是I帧，把里面的nalu单元都提取出来，打包
@@ -675,7 +675,7 @@ func muxerTagData(tag *Tag) []byte {
 	if tag.flvt.fType == av.TAG_VIDEO {
 		buffer[n] = (tag.mediat.frameType << 4) | (tag.mediat.codecID & 0x0F) //帧类型 4bit 编码id 4bit
 		n++
-		if tag.mediat.codecID == av.VIDEO_H264 {
+		if tag.mediat.codecID == av.VideoH264 {
 			//如果是h264,有额外的封装
 			utils.PutU8(buffer[n:], tag.mediat.avcPacketType) //AVCPacketType 8bit
 			n++

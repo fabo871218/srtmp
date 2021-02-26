@@ -12,7 +12,7 @@ import (
 	"registry.code.tuya-inc.top/TuyaBEMiddleWare/golib/golog"
 )
 
-//Server rtmpfuwu
+//Server rtmp服务
 type Server struct {
 	handler *protocol.StreamHandler
 	logger  logger.Logger

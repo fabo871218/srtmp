@@ -50,6 +50,48 @@ func (d *Demuxer) DemuxH(p *av.Packet) (err error) {
 	return
 }
 
+// DemuxVideo 解析视频数据，返回视频数据头部信息，payload，和相应的错误
+func (d *Demuxer) DemuxVideo(data []byte) (*av.VideoPacketHeader, []byte, error) {
+	var (
+		tag Tag
+		n   int
+	)
+
+	var err error
+	if n, err = tag.ParseVideoHeader(data); err != nil {
+		return nil, nil, err
+	}
+
+	header := av.VideoPacketHeader{
+		FrameType:       tag.mediat.frameType,
+		AVCPacketType:   tag.mediat.avcPacketType,
+		CodecID:         tag.mediat.codecID,
+		CompositionTime: tag.mediat.compositionTime,
+	}
+	return &header, data[n:], nil
+}
+
+// DemuxAudio 解析音频数据信息，返回音频数据头部信息，paylaod，和相应的错误
+func (d *Demuxer) DemuxAudio(data []byte) (*av.AudioPacketHeader, []byte, error) {
+	var (
+		tag Tag
+		n   int
+	)
+	var err error
+	if n, err = tag.ParseAudioHeader(data); err != nil {
+		return nil, nil, err
+	}
+
+	header := av.AudioPacketHeader{
+		SoundFormat:   tag.mediat.soundFormat,
+		SoundRate:     tag.mediat.soundRate,
+		SoundSize:     tag.mediat.soundSize,
+		SoundType:     tag.mediat.soundType,
+		AACPacketType: tag.mediat.aacPacketType,
+	}
+	return &header, data[n:], nil
+}
+
 //Demux ...
 func (d *Demuxer) Demux(p *av.Packet) (err error) {
 	var (
@@ -79,7 +121,8 @@ func (d *Demuxer) Demux(p *av.Packet) (err error) {
 			CompositionTime: tag.mediat.compositionTime,
 		}
 	default:
-		return fmt.Errorf("Unsupport type:%d", p.PacketType)
+		// todo 元数据需要解析吗
+		// return fmt.Errorf("Unsupport type:%d", p.PacketType)
 	}
 	if err != nil {
 		return

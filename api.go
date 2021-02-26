@@ -1,8 +1,6 @@
 package srtmp
 
 import (
-	"github.com/fabo871218/srtmp/av"
-	"github.com/fabo871218/srtmp/container/flv"
 	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/protocol"
 )
@@ -54,12 +52,5 @@ func (api *RtmpAPI) ServeRtmpTLS(addr, tlsKey, tlsCrt string) error {
 
 //NewRtmpClient 创建一个rtmp客户端
 func (api *RtmpAPI) NewRtmpClient() *RtmpClient {
-	client := &RtmpClient{
-		packetChan: make(chan *av.Packet, 16),
-		videoFirst: true,
-		audioFirst: true,
-		demuxer:    flv.NewDemuxer(),
-		logger:     api.logger,
-	}
-	return client
+	return newRtmpClient(api.logger)
 }

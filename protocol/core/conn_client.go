@@ -64,8 +64,14 @@ func (cc *ConnClient) DecodeBatch(r io.Reader, ver amf.Version) (ret []interface
 	return cc.decoder.DecodeBatch(r, ver)
 }
 
+// Decode 从r中解码一个值
 func (cc *ConnClient) Decode(r io.Reader, ver amf.Version) (interface{}, error) {
 	return cc.decoder.Decode(r, ver)
+}
+
+// Encode 编码一个属性到w中
+func (cc *ConnClient) Encode(w io.Writer, value interface{}, ver amf.Version) (int, error) {
+	return cc.encoder.Encode(w, value, ver)
 }
 
 //todo 需要完善，功能不完整
@@ -658,6 +664,7 @@ func (cc *ConnClient) Start(url string, method string) (err error) {
 func (cc *ConnClient) Write(c *ChunkStream) error {
 	if c.TypeID == av.TAG_SCRIPTDATAAMF0 || c.TypeID == av.TAG_SCRIPTDATAAMF3 {
 		var err error
+		// todo 这个是什么功能
 		if c.Data, err = amf.MetaDataReform(c.Data, amf.ADD); err != nil {
 			return err
 		}

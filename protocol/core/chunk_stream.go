@@ -119,7 +119,7 @@ type ChunkStream struct {
 	CSID      uint32 //chunk stream id
 	Timestamp uint32 //时间戳
 	Length    uint32
-	TypeID    uint32
+	TypeID    uint32 // message type id
 	StreamID  uint32
 	Data      []byte
 	Pts       uint32

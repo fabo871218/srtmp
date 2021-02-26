@@ -25,7 +25,6 @@ func (gc *GopCache) Write(p *av.Packet, bKeyFrame bool) {
 		gc.count = 0
 	}
 
-	// todo 是否需要拷贝
 	if gc.count < gc.maxNumber {
 		gc.gops = append(gc.gops, p)
 		gc.count++

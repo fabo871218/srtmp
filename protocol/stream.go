@@ -94,14 +94,42 @@ func (s *RtmpStream) startRead(wg *sync.WaitGroup) {
 	s.logger.Infof("Start to read data, id:%s", s.streamID)
 	wg.Add(1)
 	defer wg.Done()
+
+	var bfirst bool = true
 	for {
 		pkt := &av.Packet{}
 		if err := s.reader.Read(pkt); err != nil {
 			s.logger.Errorf("Read pkt failed, %s", err.Error())
 			return
 		}
-		//先缓存数据包
-		s.cache.Write(pkt)
+		switch pkt.PacketType {
+		case av.PacketTypeAudio:
+			// 目前只处理aac的sequence header，如果后续要支持更多的格式
+			if pkt.AHeader.SoundFormat == av.SOUND_AAC && pkt.AHeader.AACPacketType == av.AAC_SEQHDR {
+				s.cache.SaveAudioSeq(pkt)
+				return
+			}
+		case av.PacketTypeVideo:
+			// 这里目前只处理h264的sequence和gop缓存
+			if pkt.VHeader.CodecID == av.VideoH264 {
+				if pkt.VHeader.FrameType == av.FrameKey {
+					if pkt.VHeader.AVCPacketType == av.AvcSEQHDR {
+						s.cache.SaveVideoSeq(pkt)
+					} else {
+						s.cache.SaveVideo(pkt, true)
+					}
+				}
+				s.cache.SaveVideo(pkt, false)
+			}
+		case av.PacketTypeMetadata:
+			// 默认第一个metaData数据是音视频描述信息
+			if bfirst {
+				s.cache.SaveMetaData(pkt)
+				bfirst = false
+			}
+		default:
+		}
+
 		select {
 		case s.pktChan <- pkt:
 		default:
@@ -131,7 +159,7 @@ func (s *RtmpStream) streamLoop() {
 				for i, w := range s.writers {
 					if err := w.Write(pkt); err != nil {
 						s.logger.Infof("Write packet failed, %s close writer.", err.Error())
-						w.Close() //todo 是否要传递参数
+						w.Close()
 						s.writers[i] = nil
 						bRemove = true
 					}
@@ -157,6 +185,7 @@ func (s *RtmpStream) streamLoop() {
 					w.Close()
 					return
 				}
+
 				if err := s.cache.Send(sw.packetQueue); err != nil {
 					s.logger.Errorf("Send cache failed, %s", err.Error())
 					w.Close()
@@ -206,7 +235,7 @@ func (s *RtmpStream) streamLoop() {
 					w := s.writers[i]
 					if !w.Alive() {
 						s.writers = append(s.writers[:i], s.writers[i+1:]...)
-						w.Close() //todo 是否要传递关闭原因
+						w.Close()
 						lastWriteRemove = time.Now()
 					} else {
 						i++

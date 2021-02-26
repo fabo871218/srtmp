@@ -39,11 +39,11 @@ func (codeParser *CodecParser) Parse(p *av.Packet, w io.Writer) (err error) {
 	switch p.PacketType {
 	case av.PacketTypeVideo:
 
-		if p.VHeader.CodecID == av.VIDEO_H264 {
+		if p.VHeader.CodecID == av.VideoH264 {
 			if codeParser.h264 == nil {
 				codeParser.h264 = h264.NewParser()
 			}
-			isSeq := p.VHeader.FrameType == av.FRAME_KEY && p.VHeader.AVCPacketType == av.AVC_SEQHDR
+			isSeq := p.VHeader.FrameType == av.FrameKey && p.VHeader.AVCPacketType == av.AvcSEQHDR
 			err = codeParser.h264.Parse(p.Data, isSeq, w)
 		}
 

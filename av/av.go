@@ -56,25 +56,28 @@ const (
 
 const (
 	//视频tag的帧类型, 对于avc(h264)只用到了前面两个
-	FRAME_KEY   = 1 // keyframe （for avc, a seekable frame)
-	FRAME_INTER = 2 // inter frame (for avc, a non-seekable frame)
+	FrameKey   = 1 // keyframe （for avc, a seekable frame)
+	FrameInter = 2 // inter frame (for avc, a non-seekable frame)
 	//3:disposable inter frame
 	//4:generated keyframe(reserved for server use only)
 	//5:vidoe info/command frame
 
 	//avc 视频封装格式
-	AVC_SEQHDR = 0 // avc sequence header
-	AVC_NALU   = 1 // avc nalu
-	AVC_EOS    = 2 // avc end of sequence
+	AvcSEQHDR = 0 // avc sequence header
+	AvcNALU   = 1 // avc nalu
+	AvcEOS    = 2 // avc end of sequence
 
 	//avc视频编码id
-	VIDEO_JPEG        = 1
+	VideoJPEG         = 1
 	VideoH263         = 2
 	VideoScreen       = 3
 	VideoVP6          = 4
 	VideoVP6WithAlpha = 5
 	VideoScreenV2     = 6
-	VIDEO_H264        = 7
+	VideoH264         = 7
+
+	// 音频编码id
+	AudioCodecAAC = 1
 )
 
 // Packet类型

@@ -234,19 +234,23 @@ func (fc *ForwardConnect) playResp(cur *ChunkStream) error {
 		return err
 	}
 
-	event["level"] = "status"
-	event["code"] = "NetStream.Data.Start"
-	event["description"] = "Started playing stream."
-	if err := fc.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event); err != nil {
+	if err := fc.writeMsg(cur.CSID, cur.StreamID, "RtmpSampleAccess", false, false); err != nil {
 		return err
 	}
 
-	event["level"] = "status"
-	event["code"] = "NetStream.Play.PublishNotify"
-	event["description"] = "Started playing notify."
-	if err := fc.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event); err != nil {
-		return err
-	}
+	// event["level"] = "status"
+	// event["code"] = "NetStream.Data.Start"
+	// event["description"] = "Started playing stream."
+	// if err := fc.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event); err != nil {
+	// 	return err
+	// }
+
+	// event["level"] = "status"
+	// event["code"] = "NetStream.Play.PublishNotify"
+	// event["description"] = "Started playing notify."
+	// if err := fc.writeMsg(cur.CSID, cur.StreamID, "onStatus", 0, nil, event); err != nil {
+	// 	return err
+	// }
 	return fc.conn.Flush()
 }
 

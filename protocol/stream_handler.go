@@ -10,9 +10,10 @@ import (
 
 //StreamHandler 管理RtmpStream，每个RtmpStream代表一路流
 type StreamHandler struct {
-	mutex   sync.Mutex
-	logger  logger.Logger
-	streams map[string]*RtmpStream
+	mutex    sync.Mutex
+	logger   logger.Logger
+	onVerify func(url string) error
+	streams  map[string]*RtmpStream
 }
 
 //NewStreamHandler 创建一个管理RtmpStream的Handler
@@ -22,6 +23,11 @@ func NewStreamHandler(log logger.Logger) *StreamHandler {
 		streams: make(map[string]*RtmpStream),
 	}
 	return handler
+}
+
+// OnVerify 设置验证回调函数
+func (h *StreamHandler) OnVerify(f func(url string) error) {
+	h.onVerify = f
 }
 
 //get rtmp stream, if not exist, create a new one
@@ -68,6 +74,11 @@ func (h *StreamHandler) HandleConnect(conn *core.ForwardConnect) error {
 		App:  app,
 		Name: name,
 		URL:  url,
+	}
+
+	// 对url的 进行校验
+	if err := h.onVerify(url); err != nil {
+		return fmt.Errorf("on url verify failed, %v", err)
 	}
 
 	stream := h.getOrCreate(streamInfo)

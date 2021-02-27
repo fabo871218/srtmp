@@ -9,6 +9,7 @@ type SettingFunc func(*SettingEngine)
 type SettingEngine struct {
 	loggerFactory logger.LoggerFactory
 	logLevel      logger.LogLevel
+	onVerify      func(url string) error
 }
 
 //WithLoggerFactory 设置日志创建类
@@ -22,5 +23,12 @@ func WithLoggerFactory(v logger.LoggerFactory) SettingFunc {
 func WithLogLevel(v logger.LogLevel) SettingFunc {
 	return func(setting *SettingEngine) {
 		setting.logLevel = v
+	}
+}
+
+// WithStreamVerify 设置url地址的verify回调
+func WithStreamVerify(f func(url string) error) SettingFunc {
+	return func(setting *SettingEngine) {
+		setting.onVerify = f
 	}
 }

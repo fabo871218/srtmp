@@ -61,7 +61,7 @@ func (api *RtmpAPI) ServeRtmpTLS(addr, tlsKey, tlsCrt string) error {
 		handler: handler,
 		logger:  api.logger,
 	}
-	return server.ServeTLS(addr, tlsKey, tlsCrt)
+	return server.ServeTLS(addr, tlsCrt, tlsKey)
 }
 
 //NewRtmpClient 创建一个rtmp客户端

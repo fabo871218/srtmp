@@ -287,7 +287,6 @@ func (c *RtmpClient) readloop() {
 			continue
 		}
 
-		c.logger.Infof("Debug.... stream:%d type:%d", cs.StreamID, cs.TypeID)
 		switch cs.TypeID {
 		case 18, 15: //数据消息,传递一些元数据 amf0-18, amf3-15
 			// 脚本要先decode

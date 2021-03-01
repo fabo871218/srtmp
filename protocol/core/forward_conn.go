@@ -38,6 +38,7 @@ type ConnectInfo struct {
 	Flashver       string `amf:"flashVer" json:"flashVer"`
 	SwfURL         string `amf:"swfUrl" json:"swfUrl"`
 	TcURL          string `amf:"tcUrl" json:"tcUrl"`
+	RawQuery       string `amf:"rawQuery" json:"rawQuery"`
 	Fpad           bool   `amf:"fpad" json:"fpad"`
 	AudioCodecs    int    `amf:"audioCodecs" json:"audioCodecs"`
 	VideoCodecs    int    `amf:"videoCodecs" json:"videoCodecs"`
@@ -142,6 +143,9 @@ func (fc *ForwardConnect) handleConnect(vs []interface{}, CSID, streamID uint32)
 			}
 			if tcurl, ok := obimap["tcUrl"]; ok {
 				fc.ConnInfo.TcURL = tcurl.(string)
+			}
+			if rawQuery, ok := obimap["rawQuery"]; ok {
+				fc.ConnInfo.RawQuery = rawQuery.(string)
 			}
 			if encoding, ok := obimap["objectEncoding"]; ok {
 				fc.ConnInfo.ObjectEncoding = int(encoding.(float64))
@@ -348,6 +352,9 @@ func (fc *ForwardConnect) GetStreamInfo() (app string, name string, url string) 
 	app = fc.ConnInfo.App
 	name = fc.PublishInfo.Name
 	url = fc.ConnInfo.TcURL + "/" + fc.PublishInfo.Name
+	if fc.ConnInfo.RawQuery != "" {
+		url = url + "?" + fc.ConnInfo.RawQuery
+	}
 	return
 }
 

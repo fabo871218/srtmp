@@ -289,6 +289,7 @@ func (cc *ConnClient) writeConnectMsg() error {
 	event["type"] = "nonprivate"
 	event["flashVer"] = "FMS.3.1"
 	event["tcUrl"] = cc.tcurl
+	event["rawQuery"] = cc.query
 	cc.curcmdName = cmdConnect
 
 	cc.logger.Tracef("writeConnectMsg: connClient.transID=%d, event=%v", cc.transID, event)

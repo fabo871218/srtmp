@@ -1,13 +1,10 @@
 package cache
 
 import (
-	"bytes"
 	"errors"
 	"flag"
-	"fmt"
 
 	"github.com/fabo871218/srtmp/av"
-	"github.com/fabo871218/srtmp/protocol/amf"
 )
 
 var (
@@ -91,25 +88,12 @@ func (cache *Cache) Send(inputChan chan<- *av.Packet) error {
 	cachePkts := make([]*av.Packet, 3)
 	cachePkts = cachePkts[:0]
 	if cache.metadata != nil {
-		fmt.Println("Debug.... send metadata...")
 		cachePkts = append(cachePkts, cache.metadata)
-
-		decoder := amf.NewDecoder()
-		reader := bytes.NewReader(cache.metadata.Data)
-		vs, err := decoder.DecodeBatch(reader, amf.AMF0)
-		if err != nil {
-			fmt.Println("Debug.... decode err ", err)
-		}
-		for _, value := range vs {
-			fmt.Println("Debug...... ", value)
-		}
 	}
 	if cache.videoSeq != nil {
-		fmt.Println("Debug.... video sequence....")
 		cachePkts = append(cachePkts, cache.videoSeq)
 	}
 	if cache.audioSeq != nil {
-		fmt.Println("Debug.... audio sequence....")
 		cachePkts = append(cachePkts, cache.audioSeq)
 	}
 

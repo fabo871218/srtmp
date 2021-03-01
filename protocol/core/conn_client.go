@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -346,7 +347,7 @@ func (cc *ConnClient) parseURL(url string) (local, remote string, err error) {
 	cc.app = ps[0]
 	cc.title = ps[1]
 	cc.query = parsedURL.RawQuery
-	cc.tcurl = "rtmp://" + parsedURL.Host + "/" + cc.app
+	cc.tcurl = fmt.Sprintf("%s://%s/%s", parsedURL.Scheme, parsedURL.Host, cc.app)
 	port := ":1935"
 	host := parsedURL.Host
 	local = ":0"
@@ -371,21 +372,24 @@ func (cc *ConnClient) parseURL(url string) (local, remote string, err error) {
 }
 
 func (cc *ConnClient) connectServer(url string) error {
-	localIP, remoteIP, err := cc.parseURL(url)
+	_, remoteHost, err := cc.parseURL(url)
 	if err != nil {
 		return fmt.Errorf("parse url:%s faile, %v", url, err)
 	}
 
-	var localAddr, remoteAddr *net.TCPAddr
-	if localAddr, err = net.ResolveTCPAddr("tcp", localIP); err != nil {
-		return fmt.Errorf("net.ResolveTCPAddr localIP failed, %v", err)
-	} else if remoteAddr, err = net.ResolveTCPAddr("tcp", remoteIP); err != nil {
-		return fmt.Errorf("net.ResolveTCPAddr remoteIP failed, %v", err)
-	}
+	var conn net.Conn
+	if strings.HasPrefix(url, "rtmps") {
+		conf := &tls.Config{
+			InsecureSkipVerify: true,
+		}
 
-	var conn *net.TCPConn
-	if conn, err = net.DialTCP("tcp", localAddr, remoteAddr); err != nil {
-		return fmt.Errorf("net.DialTCP failed, %v", err)
+		if conn, err = tls.Dial("tcp", remoteHost, conf); err != nil {
+			return fmt.Errorf("connect to host:%s failed, %v", remoteHost, err)
+		}
+	} else {
+		if conn, err = net.Dial("tcp", remoteHost); err != nil {
+			return fmt.Errorf("connect to host:%s failed, %v", remoteHost, err)
+		}
 	}
 
 	rtmpConn := NewRtmpConn(conn, 4*1024)

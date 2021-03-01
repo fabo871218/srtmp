@@ -9,7 +9,6 @@ import (
 	"github.com/fabo871218/srtmp/logger"
 	"github.com/fabo871218/srtmp/protocol"
 	"github.com/fabo871218/srtmp/protocol/core"
-	"registry.code.tuya-inc.top/TuyaBEMiddleWare/golib/golog"
 )
 
 //Server rtmp服务
@@ -76,7 +75,6 @@ func (s *Server) ServeTLS(listenAddr string, tlsCrt, tlsKey string) error {
 	config := &tls.Config{Certificates: []tls.Certificate{cert}}
 	listener, err = tls.Listen("tcp", listenAddr, config)
 	if err != nil {
-		golog.Error("Listen rtsp tls failed.", golog.String("err", err.Error()))
 		return fmt.Errorf("Listen rtsp tls failed, %s", err.Error())
 	}
 

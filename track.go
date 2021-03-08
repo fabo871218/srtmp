@@ -190,7 +190,7 @@ func (t *StreamTrack) writeVideoMessage(msg *StreamMessage) error {
 				return nil
 			}
 			//send flv sequence header
-			sequenceData := flv.NewAVCSequenceHeader(sps, pps, msg.Pts)
+			sequenceData := flv.NewAVCSequenceHeader(sps, pps, msg.Pts, false)
 			sequenceMsg := StreamMessage{
 				MessageType: MessageTypeVideo,
 				Payload:     sequenceData,
@@ -210,7 +210,7 @@ func (t *StreamTrack) writeVideoMessage(msg *StreamMessage) error {
 		CodecID:         uint8(t.video.CodecID),
 		CompositionTime: 0, // todo
 	}
-	videoData, err := flv.PackVideoData(&vh, t.streamID, msg.Payload, msg.Pts)
+	videoData, err := flv.PackVideoData(&vh, false, t.streamID, msg.Payload, msg.Pts)
 	if err != nil {
 		return fmt.Errorf("flv.PackVideoData %v", err)
 	}
@@ -255,7 +255,7 @@ func (t *StreamTrack) writeAudioMessage(msg *StreamMessage) error {
 		SoundType:     1, // todo 要确定一下该值怎么填写
 		AACPacketType: 0, // 该字段在发送的时候可以忽略
 	}
-	videoData, err := flv.PackAudioData(&ah, t.streamID, msg.Payload, msg.Pts)
+	videoData, err := flv.PackAudioData(&ah, false, t.streamID, msg.Payload, msg.Pts)
 	if err != nil {
 		return fmt.Errorf("pack audio data failed, %v", err)
 	}

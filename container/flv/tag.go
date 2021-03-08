@@ -664,6 +664,27 @@ func NewAACData(ah av.AudioPacketHeader, fullTag bool, src []byte, timeStamp uin
 	return buffer[:index]
 }
 
+// PackScriptData ...
+func PackScriptData(tagType int, streamID uint32, src []byte) ([]byte, error) {
+	tag := &Tag{
+		flvt: flvTag{
+			fType:           uint8(tagType),
+			dataSize:        uint32(len(src)), //可能由上层协议作为一帧的分割，该字段没有效果
+			timeStamp:       0,
+			timeStampExtend: 0,
+			streamID:        streamID,
+		},
+	}
+
+	index := 0
+	buffer := make([]byte, 16+len(src))
+	n := muxerTagData(buffer, tag, true)
+	index += n
+	copy(buffer[index:], src)
+	index += len(src)
+	return buffer[:index], nil
+}
+
 //MuxerTagData 打包tag头和数据部分，在用rtmp协议发送时，tag头只包含了mediaTag，没有flvTag数据
 //应该时flvTag这部分功能被chunk的功能替代了，不用flvTag也可以知道一个完整的帧，如果打包成flv文件时，
 //flvTag不能省略

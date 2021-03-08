@@ -234,7 +234,7 @@ func (t *StreamTrack) writeAudioMessage(msg *StreamMessage) error {
 				SoundSize:   uint8(t.audio.DataBit),
 				SoundType:   1, // for aac, always 1
 			}
-			sequenceData := flv.NewAACSequenceHeader(ah)
+			sequenceData := flv.NewAACSequenceHeader(ah, false)
 			sequenceMsg := StreamMessage{
 				MessageType: MessageTypeAudio,
 				Payload:     sequenceData,

@@ -9,6 +9,7 @@ import (
 
 	"github.com/fabo871218/srtmp/av"
 	"github.com/fabo871218/srtmp/media/h264"
+	"github.com/fabo871218/srtmp/protocol/amf"
 )
 
 var startCode []byte = []byte{0x00, 0x00, 0x00, 0x01}
@@ -28,6 +29,24 @@ func TestFlvPack(t *testing.T) {
 	flvHeader = append(flvHeader, []byte{0x00, 0x00, 0x00, 0x09}...) // DataOffset flvHeader长度，固定位9个字节
 	flvHeader = append(flvHeader, []byte{0x00, 0x00, 0x00, 0x00}...) // previous tag size0
 	wbuf.Write(flvHeader)
+
+	objmap := make(amf.Object)
+	objmap["videocodecid"] = av.VideoH264
+	objmap["height"] = 480
+	objmap["width"] = 640
+	objmap["aaa"] = "sdfdsfdsfdsf"
+
+	bts := &bytes.Buffer{}
+	encoder := amf.Encoder{}
+	if _, err := encoder.Encode(bts, "onMetaData", amf.AMF0); err != nil {
+		t.Errorf("encode failed, %v", err)
+	}
+	if _, err := encoder.Encode(bts, objmap, amf.AMF0); err != nil {
+		t.Errorf("encode failed, %v", err)
+	}
+	mateData, _ := PackScriptData(av.TAG_SCRIPTDATAAMF0, 0, bts.Bytes())
+	wbuf.Write(mateData)
+	binary.Write(wbuf, binary.BigEndian, uint32(len(mateData)))
 
 	var timeStamp uint32
 	bfirst := true

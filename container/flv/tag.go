@@ -511,11 +511,11 @@ func PackVideoData(header *av.VideoPacketHeader, fullTag bool, streamID uint32, 
 			n := muxerTagData(buffer, tag, fullTag)
 			index += n
 			for _, nalu := range nalus {
-				if len := len(nalu); len > 0 {
-					utils.PutU32BE(buffer[index:], uint32(len))
+				if length := len(nalu); length > 0 {
+					utils.PutU32BE(buffer[index:], uint32(length))
 					index += 4
 					copy(buffer[index:], nalu)
-					index += len
+					index += length
 				}
 			}
 			// 设置正确的dataSize，然后重新muxerTagData

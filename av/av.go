@@ -93,7 +93,7 @@ var (
 	PLAY    = "play"
 )
 
-// Header can be converted to AudioHeaderInfo or VideoHeaderInfo
+// Packet ...
 type Packet struct {
 	PacketType uint32 // packet类型
 	TimeStamp  uint32 // dts
@@ -105,10 +105,10 @@ type Packet struct {
 
 //AudioPacketHeader comment
 type AudioPacketHeader struct {
-	SoundFormat   uint8
-	SoundRate     uint8
-	SoundSize     uint8
-	SoundType     uint8
+	SoundFormat   uint8 // 音频编码格式
+	SoundRate     uint8 // 音频采样率
+	SoundSize     uint8 // 采样深度 0 - 8bit 1 - 16bit
+	SoundType     uint8 // 声道数 0 = sndMono 1 = sndStereo For AAC: always 1
 	AACPacketType uint8
 }
 

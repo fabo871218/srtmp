@@ -50,6 +50,7 @@ func PushH264(track *srtmp.StreamTrack) {
 				if err := track.WriteMessage(&msg); err != nil {
 					panic(err)
 				}
+				fmt.Println("Debug.... send message.....")
 				time.Sleep(time.Millisecond * 40)
 				timeStamp += 40
 
@@ -119,7 +120,7 @@ func main() {
 		panic(err)
 	}
 
-	rtmpURL := fmt.Sprintf("rtmp://%s:%d/srtmp/livego", *host, *port)
+	rtmpURL := fmt.Sprintf("rtmp://%s:%d/live/rfBd56ti2SMtYvSgD5xAV0YU99zampta7Z7S575KLkIZ9PYk", *host, *port)
 	if err := client.OpenPublish(rtmpURL, func(state srtmp.RtmpConnectState, err error) {
 		switch state {
 		case srtmp.StateConnectSuccess:

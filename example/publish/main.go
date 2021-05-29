@@ -9,6 +9,7 @@ import (
 
 	"github.com/fabo871218/srtmp"
 	"github.com/fabo871218/srtmp/av"
+	"github.com/fabo871218/srtmp/logger"
 )
 
 var startCode []byte = []byte{0x00, 0x00, 0x00, 0x01}
@@ -50,7 +51,7 @@ func PushH264(track *srtmp.StreamTrack) {
 				if err := track.WriteMessage(&msg); err != nil {
 					panic(err)
 				}
-				fmt.Println("Debug.... send message.....")
+				fmt.Println("Debug.... send video message.....")
 				time.Sleep(time.Millisecond * 40)
 				timeStamp += 40
 
@@ -63,6 +64,25 @@ func PushH264(track *srtmp.StreamTrack) {
 		if index+4 >= len(data) {
 			index = 0
 			pre = 0
+		}
+	}
+}
+
+func PushAAC(track *srtmp.StreamTrack) {
+	timeTick := time.NewTicker(time.Millisecond * 40)
+	for {
+		select {
+		case <-timeTick.C:
+			msg := srtmp.StreamMessage{
+				MessageType: srtmp.MessageTypeAudio,
+				Pts:         uint32(time.Now().Nanosecond() / 1000000),
+				Dts:         0,
+				Payload:     make([]byte, 256),
+			}
+			if err := track.WriteMessage(&msg); err != nil {
+				panic(err)
+			}
+			fmt.Println("Debug.... send audio message.....")
 		}
 	}
 }
@@ -106,7 +126,7 @@ func main() {
 	port := flag.Int("port", 1935, "rtmp server port")
 	flag.Parse()
 
-	api := srtmp.NewAPI()
+	api := srtmp.NewAPI(srtmp.WithLogLevel(logger.LogLevelDebug))
 	client := api.NewRtmpClient()
 
 	videoInfo := srtmp.VideoTrackInfo{
@@ -115,7 +135,14 @@ func main() {
 		Height:  1080,
 	}
 
-	track, err := client.AddStreamTrack(nil, &videoInfo)
+	audioInfo := srtmp.AudioTrackInfo{
+		CodecID:    av.SOUND_AAC,
+		SampleRate: 8000,
+		DataBit:    16,
+		Channels:   1,
+	}
+
+	track, err := client.AddStreamTrack(&audioInfo, &videoInfo)
 	if err != nil {
 		panic(err)
 	}
@@ -136,5 +163,13 @@ func main() {
 	}
 
 	fmt.Println("Publish url:", rtmpURL)
-	PushH264(track)
+	go func() {
+		PushH264(track)
+	}()
+
+	go func() {
+		PushAAC(track)
+	}()
+
+	select {}
 }

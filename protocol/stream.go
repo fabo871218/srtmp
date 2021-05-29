@@ -105,9 +105,12 @@ func (s *RtmpStream) startRead(wg *sync.WaitGroup) {
 		switch pkt.PacketType {
 		case av.PacketTypeAudio:
 			// 目前只处理aac的sequence header，如果后续要支持更多的格式
+			if pkt.AHeader.SoundFormat != av.SOUND_AAC {
+				s.logger.Warnf("audio format[%d] not support", pkt.AHeader.SoundFormat)
+				continue
+			}
 			if pkt.AHeader.SoundFormat == av.SOUND_AAC && pkt.AHeader.AACPacketType == av.AAC_SEQHDR {
 				s.cache.SaveAudioSeq(pkt)
-				return
 			}
 		case av.PacketTypeVideo:
 			// 这里目前只处理h264的sequence和gop缓存

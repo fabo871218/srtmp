@@ -76,7 +76,6 @@ func (h *StreamHandler) HandleConnect(conn *core.ForwardConnect) error {
 		URL:  url,
 	}
 
-	fmt.Println("Debug..... url:", url)
 	// 对url的 进行校验
 	if err := h.onVerify(url); err != nil {
 		return fmt.Errorf("on url verify failed, %v", err)

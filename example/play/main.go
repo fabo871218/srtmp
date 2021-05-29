@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/fabo871218/srtmp"
+	"github.com/fabo871218/srtmp/logger"
 )
 
 var startCode []byte = []byte{0x00, 0x00, 0x00, 0x01}
@@ -13,7 +14,7 @@ func main() {
 	rtmpURL := flag.String("url", "", "rtmp play url")
 	flag.Parse()
 
-	api := srtmp.NewAPI()
+	api := srtmp.NewAPI(srtmp.WithLogLevel(logger.LogLevelDebug))
 	client := api.NewRtmpClient()
 
 	if err := client.OpenPlay(*rtmpURL, func(state srtmp.RtmpConnectState, err error) {

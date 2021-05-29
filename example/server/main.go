@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/fabo871218/srtmp"
+	"github.com/fabo871218/srtmp/logger"
 )
 
 // import (
@@ -136,6 +137,10 @@ import (
 // 	//startRtmp(stream, nil)
 // }
 
+func onURLVerify(url string) error {
+	return nil
+}
+
 func main() {
 	port := flag.Int("port", 1935, "rtmp server port")
 	flag.Parse()
@@ -146,7 +151,8 @@ func main() {
 			time.Sleep(time.Second * 1)
 		}
 	}()
-	api := srtmp.NewAPI()
+	api := srtmp.NewAPI(srtmp.WithLogLevel(logger.LogLevelDebug),
+		srtmp.WithStreamVerify(onURLVerify))
 	addr := fmt.Sprintf(":%d", *port)
 	if err := api.ServeRtmp(addr); err != nil {
 		fmt.Println("Servr rtmp failed, err:", err)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"flag"
 	"fmt"
 
@@ -9,6 +10,28 @@ import (
 )
 
 var startCode []byte = []byte{0x00, 0x00, 0x00, 0x01}
+
+func parseH264(data []byte) error {
+	length := len(data)
+	if length < 4 {
+		return fmt.Errorf("bad length")
+	}
+
+	index := 0
+	for length > 0 {
+		naluLen := binary.BigEndian.Uint32(data[index : index+4])
+		length = length - 4
+		index += 4
+
+		if naluLen > uint32(length) {
+			return fmt.Errorf("bad nalu len, %d-%d", naluLen, length)
+		}
+		fmt.Println("Debug.... nalu len:", naluLen)
+		length = length - int(naluLen)
+		index += int(naluLen)
+	}
+	return nil
+}
 
 func main() {
 	rtmpURL := flag.String("url", "", "rtmp play url")
@@ -42,9 +65,13 @@ func main() {
 
 				switch msg.MessageType {
 				case srtmp.MessageTypeAudio:
-					fmt.Println("receive audio message...")
+					fmt.Println("receive audio message...", len(msg.Payload))
 				case srtmp.MessageTypeVideo:
-					fmt.Println("receive video message....", track.VideoInfo().CodecID, track.VideoInfo().Height, track.VideoInfo().Width)
+					fmt.Println("receive video message....", len(msg.Payload))
+					if err := parseH264(msg.Payload); err != nil {
+						fmt.Println("parse video failed, ", err)
+						//fmt.Println(hex.EncodeToString(msg.Payload[:]))
+					}
 				case srtmp.MessageTypeMateData:
 					fmt.Println("receive mate data message....")
 				default:

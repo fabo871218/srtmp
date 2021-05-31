@@ -90,8 +90,9 @@ func (rtmpConn *RtmpConn) Read() (c *ChunkStream, err error) {
 				Length:    cs.Length,
 				TypeID:    cs.TypeID,
 				StreamID:  cs.StreamID,
-				Data:      cs.Data[0:cs.Length],
+				Data:      make([]byte, cs.Length),
 			}
+			copy(c.Data, cs.Data[:cs.Length])
 			//如果是控制消息，就直接处理掉，不反回到外层
 			isHandled := rtmpConn.handleControlMsg(cs)
 			rtmpConn.ack(cs.Length)

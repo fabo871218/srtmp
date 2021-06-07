@@ -47,7 +47,6 @@ func main() {
 		case srtmp.StateConnectFailed:
 			fmt.Println("connect failed.....")
 		case srtmp.StateDisconnect:
-			client.Close()
 			fmt.Println("Debug.... disconnect....")
 		}
 	}); err != nil {
